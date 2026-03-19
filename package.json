@@ -5,6 +5,14 @@
   "version": "0.0.1",
   "publisher": "GreenPedro",
   "icon": "media/store/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pedogreen/TODO-Extension.git"
+  },
+  "homepage": "https://github.com/Pedogreen/TODO-Extension#readme",
+  "bugs": {
+    "url": "https://github.com/Pedogreen/TODO-Extension/issues"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
