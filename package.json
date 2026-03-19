@@ -3,7 +3,7 @@
   "displayName": "TODO List Pro",
   "description": "A structured TODO sidebar for VS Code with nested groups, shared project lists, import/export, and fast filtering.",
   "version": "0.0.1",
-  "publisher": "GreenPedro",
+  "publisher": "greenpedro",
   "icon": "media/store/icon.png",
   "repository": {
     "type": "git",

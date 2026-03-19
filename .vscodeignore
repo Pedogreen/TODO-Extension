@@ -5,3 +5,4 @@ tsconfig.json
 **/*.ts
 node_modules/**
 mdt-todo-import.json
+tmp_vsix/**
