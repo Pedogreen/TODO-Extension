@@ -1,0 +1,163 @@
+{
+  "name": "todo-list-pro",
+  "displayName": "TODO List Pro",
+  "description": "A structured TODO sidebar for VS Code with nested groups, shared project lists, import/export, and fast filtering.",
+  "version": "0.0.1",
+  "publisher": "GreenPedro",
+  "icon": "media/store/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Productivity"
+  ],
+  "keywords": [
+    "todo",
+    "tasks",
+    "checklist",
+    "sidebar",
+    "productivity",
+    "workspace",
+    "project"
+  ],
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onView:todoListProView",
+    "onCommand:todoListPro.addGroup",
+    "onCommand:todoListPro.addSubgroup",
+    "onCommand:todoListPro.addTodo",
+    "onCommand:todoListPro.toggleDone",
+    "onCommand:todoListPro.deleteItem",
+    "onCommand:todoListPro.setFilter",
+    "onCommand:todoListPro.clearFilter",
+    "onCommand:todoListPro.setExpandAll",
+    "onCommand:todoListPro.setCollapseAll",
+    "onCommand:todoListPro.toggleHideCompleted",
+    "onCommand:todoListPro.createWorkspaceLink",
+    "onCommand:todoListPro.linkWorkspaceToScope",
+    "onCommand:todoListPro.unlinkWorkspaceScope",
+    "onCommand:todoListPro.setStorageWorkspace",
+    "onCommand:todoListPro.setStorageProfile",
+    "onCommand:todoListPro.refresh"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "todoListPro",
+          "title": "TODO",
+          "icon": "media/checklist.svg"
+        }
+      ]
+    },
+    "views": {
+      "todoListPro": [
+        {
+          "id": "todoListProView",
+          "name": "TODO List",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "todoListPro.addGroup",
+        "title": "TODO: Add Group"
+      },
+      {
+        "command": "todoListPro.addSubgroup",
+        "title": "TODO: Add Subgroup"
+      },
+      {
+        "command": "todoListPro.addTodo",
+        "title": "TODO: Add TODO"
+      },
+      {
+        "command": "todoListPro.toggleDone",
+        "title": "TODO: Toggle Done"
+      },
+      {
+        "command": "todoListPro.deleteItem",
+        "title": "TODO: Delete Item"
+      },
+      {
+        "command": "todoListPro.setFilter",
+        "title": "TODO: Set Filter"
+      },
+      {
+        "command": "todoListPro.clearFilter",
+        "title": "TODO: Clear Filter"
+      },
+      {
+        "command": "todoListPro.setExpandAll",
+        "title": "TODO: Expand All Groups"
+      },
+      {
+        "command": "todoListPro.setCollapseAll",
+        "title": "TODO: Collapse All Groups"
+      },
+      {
+        "command": "todoListPro.toggleHideCompleted",
+        "title": "TODO: Toggle Hide Completed"
+      },
+      {
+        "command": "todoListPro.createWorkspaceLink",
+        "title": "TODO: Create Shared Workspace Project"
+      },
+      {
+        "command": "todoListPro.linkWorkspaceToScope",
+        "title": "TODO: Link Workspace To Shared Project"
+      },
+      {
+        "command": "todoListPro.unlinkWorkspaceScope",
+        "title": "TODO: Unlink Workspace From Shared Project"
+      },
+      {
+        "command": "todoListPro.setStorageWorkspace",
+        "title": "TODO: Use Workspace Storage"
+      },
+      {
+        "command": "todoListPro.setStorageProfile",
+        "title": "TODO: Use Profile Storage"
+      },
+      {
+        "command": "todoListPro.refresh",
+        "title": "TODO: Refresh"
+      }
+    ],
+    "configuration": {
+      "title": "TODO List Pro",
+      "properties": {
+        "todoListPro.defaultStorageMode": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "profile"
+          ],
+          "default": "workspace",
+          "description": "Workspace = separate TODOs per project. Profile = shared TODOs synced by VS Code profile sync."
+        },
+        "todoListPro.hideCompletedByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, completed TODOs are hidden by default."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.4"
+  }
+}

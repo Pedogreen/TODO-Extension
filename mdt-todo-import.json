@@ -1,0 +1,1828 @@
+{
+    "version":  1,
+    "exportedAt":  "2026-03-18T23:53:22.7572496Z",
+    "entries":  [
+                    {
+                        "targetId":  "scope:ai",
+                        "label":  "AI",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-ff74bde0bef2",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-aadce4317c6c",
+                                                                           "text":  "Reverse function",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002646
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-14159a223dbd",
+                                                                           "text":  "GIT",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002656
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8f57b7eefb5e",
+                                                                           "text":  "build script",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002656
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-08253a08801b",
+                                                                           "text":  "gitignore",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002656
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-45ecd364965d",
+                                                                           "text":  "vetve a clone script",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002657
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:applewatch-todo",
+                        "label":  "AppleWatch TODO",
+                        "store":  {
+                                      "groups":  [
+
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:ceny",
+                        "label":  "Ceny",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-f872d9d4066c",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-3494503e7c57",
+                                                                           "text":  "Litho",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002669
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c638ddf5bc68",
+                                                                           "text":  "160 led pasek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002669
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-e5e23770354d",
+                                                                           "text":  "40 baterie",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002670
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9adefccf09ab",
+                                                                           "text":  "113 materiál filament",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002670
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-818c8b88eadb",
+                                                                           "text":  "20 elektřina",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002670
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-5371331cbe90",
+                                                                           "text":  "333 kc material",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002670
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:devices",
+                        "label":  "Devices",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-f90013e7f183",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-ab906d6bc355",
+                                                                           "text":  "konec záruky -\u003e dolpnovat jak resit?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002671
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:jirka-brada",
+                        "label":  "Jirka Brada",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-56c373114e5f",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-4f52ebf67478",
+                                                                           "text":  "reminders",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002671
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-18c543f4a531",
+                                                                           "text":  "Jaroslava",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002673
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f19e2a75a709",
+                                                                           "text":  "yana",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002673
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-148300cd1377",
+                                                                           "text":  "Monitorace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002673
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:logovaci-syst-m",
+                        "label":  "Logovaci systém",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-4862169c3eee",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-d11151748f38",
+                                                                           "text":  "od do",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-25bb1e9d514c",
+                                                                           "text":  "per user",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-05b36dd241a8",
+                                                                           "text":  "per object (dbconnector)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-57a31cd743ce",
+                                                                           "text":  "notifications about errors/fatal erros/ translation errros/ warnings",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6774e331c582",
+                                                                           "text":  "logovani post vstupnich parametru",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6e894c155bef",
+                                                                           "text":  "(vystupni)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ce3b53ce5b59",
+                                                                           "text":  "tagovani ednpointu s cim to souvisi",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-bfab64419599",
+                                                                           "text":  "export / zobrazeni v gui",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-138ae7a8dcc1",
+                                                                           "text":  "regular enpoints logging ignoring (notifikace)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f71ed61a55e6",
+                                                                           "text":  "rozdelit regular loging do jineho filu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002674
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:mdt-cz",
+                        "label":  "MDT.CZ",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-d541df1619d8",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-f96133723943",
+                                                                           "text":  "Nachystat SK VERZI - napsat Tomasovi",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002675
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:monitorace-dotazy",
+                        "label":  "Monitorace dotazy",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-ab7cf54c864f",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-115f1738a161",
+                                                                           "text":  "nasazeno/zkontrolovano -\u003e prechody stavu? jiné barvy pro nasazeno? jiné pro zkontrolovano?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002675
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-5002acaadc17",
+                                                                           "text":  "faros - stav baterie? doresit, kde získáme?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002675
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-edc0d2876b72",
+                                                                           "text":  "farosy neuron / reseno (moznost noveho typu pristroje/ jedna podmínka pro zobrazeni statistik na monitoraci)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-3c1783563429",
+                                                                           "text":  "FHM3 -\u003e zanikaji",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-2a49613560ce",
+                                                                           "text":  "OrderType -\u003e Typy objednávky -\u003e samoplatce? studie? -\u003e zrusit samoplatce -\u003e studie (pridat priznak?) -\u003e studie odebrat",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-baa7d573be99",
+                                                                           "text":  "vykazovani na zz -\u003e samoplatce / zadanka / empty (ani jedno ani druhé)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-2c13319e3f90",
+                                                                           "text":  "pacient -\u003e dodělat narodnost",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-914a4aa4fb30",
+                                                                           "text":  "2 hodnotitele, 2 dokotri u monitorace (je to bezne)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fdaceea4b514",
+                                                                           "text":  "filter on keyup on enter?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ebe318426e86",
+                                                                           "text":  "attachments in sending emails?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002676
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:monitorace",
+                        "label":  "Monitorace",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-4db08fe8fb25",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-5e97c6756eb9",
+                                                                           "text":  "Endpointy:",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f7ab415a0424",
+                                                                           "text":  "FHM3 -\u003e zanikaji",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-0233360a3992",
+                                                                           "text":  "FN -\u003e faros neuron",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-bcd392046d8d",
+                                                                           "text":  "pacient -\u003e dodělat narodnost",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-0b01b02b02af",
+                                                                           "text":  "\\- diagnoza pro vykazovani -\u003e udelat seznam pro statistiky a automatizace (ted se to dela do poznámek) - probrat s babickou",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fb646db54026",
+                                                                           "text":  "\\- birthday?? -\u003e opravit datum",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ef047ac0c11f",
+                                                                           "text":  "Milan - u jany dodělat setype",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002679
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-351134650584",
+                                                                           "text":  "\u003e uz byla vykazana",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c92fe8239727",
+                                                                           "text":  "zadanka je / neni OK",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8bbb4480d8f6",
+                                                                           "text":  "REZERVACE",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-1cc0f135c702",
+                                                                           "text":  "*opravit filtrace MFFS ZZ -\u003e existuje, -\u003e Exchange**",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-0059bbbe7422",
+                                                                           "text":  "notes staticka na vytvareni formulare",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-4f1230f279aa",
+                                                                           "text":  "ukladani poctu na stranky monitoraci do nastaveni uzivatele",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8761462874e2",
+                                                                           "text":  "*opravit filter na rc a mobil a jmeno - ted**",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-bbcc209f1460",
+                                                                           "text":  "rodne cislo bez lomitek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-189dcf9b9de4",
+                                                                           "text":  "generator sms od pacienta - ted",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-3c6904336abb",
+                                                                           "text":  "edit ikona jednotna",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-7d92bd9d8f69",
+                                                                           "text":  "telefony s vlajeckama",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6d6ece7c47f0",
+                                                                           "text":  "formaty adress, identifikatoru, kontaktu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-621ff21231a6",
+                                                                           "text":  "send report email endpoint - done but todo",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002680
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:monitorace",
+                        "label":  "Monitorace",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-aebd66dd9943",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-aa21e0c8d8f0",
+                                                                           "text":  "Endpointy:",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002682
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f75d036d69ac",
+                                                                           "text":  "FHM3 -\u003e zanikaji",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002682
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-bdfa13e3bdc5",
+                                                                           "text":  "FN -\u003e faros neuron",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002682
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c50ac5d1a04e",
+                                                                           "text":  "pacient -\u003e dodělat narodnost",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002682
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-e8479fa0a070",
+                                                                           "text":  "diagnoza pro vykazovani -\u003e udelat seznam pro statistiky a automatizace (ted se to dela do poznámek) - probrat s babickou",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-bd16b3f3a77f",
+                                                                           "text":  "birthday?? -\u003e opravit datum",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-2b0e3a74a38b",
+                                                                           "text":  "Milan - u jany dodělat setype",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-2a62b2a05165",
+                                                                           "text":  "\u003e uz byla vykazana",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-31964394c685",
+                                                                           "text":  "zadanka je / neni OK",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c5dfbee7967e",
+                                                                           "text":  "REZERVACE",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f0c165a9e959",
+                                                                           "text":  "opravit filtrace MFFS ZZ -\u003e existuje, -\u003e Exchange",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fc157773732f",
+                                                                           "text":  "notes staticka na vytvareni formulare",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-faaf39e5029a",
+                                                                           "text":  "ukladani poctu na stranky monitoraci do nastaveni uzivatele",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-22f9d803d05c",
+                                                                           "text":  "opravit filter na rc a mobil a jmeno - ted",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9a1223ff2221",
+                                                                           "text":  "rodne cislo bez lomitek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-702977f5397b",
+                                                                           "text":  "formátovat v tabulkách pacienta ve formatu prijmeni jmeno (tituly) - ted",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002683
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-aaf221cd68cc",
+                                                                           "text":  "sms templates z bekendu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fb217c9bc620",
+                                                                           "text":  "generator sms od pacienta - ted",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-408a4394710e",
+                                                                           "text":  "edit ikona jednotna",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-1c18f5f085bd",
+                                                                           "text":  "telefony s vlajeckama",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f2e9c1b77a16",
+                                                                           "text":  "getbyid baseinfo devices correct - now",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9c63b9ebb8f0",
+                                                                           "text":  "formaty adress, identifikatoru, kontaktu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-3d14950a413d",
+                                                                           "text":  "smazat notes uplne? smazat natvrdo",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002684
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:navody",
+                        "label":  "Navody",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-86ebd9187ed3",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-2ce8f3a47016",
+                                                                           "text":  "upevneni - hacek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002685
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-a19a65fc1f02",
+                                                                           "text":  "barvičky - pojmenovat spravne",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002685
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-5df55e2324ed",
+                                                                           "text":  "nemaji sahat do navody",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002685
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:nfc-tagy",
+                        "label":  "NFC TAGY",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-749303b13f1d",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-c88968371b1c",
+                                                                           "text":  "Notifikace - nezobrazeno - archivovano - posilani emailu / neposilani emailu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-e26a9d3dfde5",
+                                                                           "text":  "Spam",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-90dcdd385553",
+                                                                           "text":  "typ momentalne postrada smysl a logiku",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-2a83078e2ba3",
+                                                                           "text":  "Moznost nastaveni Notifikace -",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-a814cb868dcf",
+                                                                           "text":  "Unikatni Notifikace -\u003e defaultni nastaveni pro jednotlive Notifikace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-93aa31d34163",
+                                                                           "text":  "Procesy zobrazeni notifikace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-1a9af1a42fbe",
+                                                                           "text":  "Kliknuti na notifikaci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f3d767ec74f5",
+                                                                           "text":  "Hromadne oznaceni notifikaci v levem hornim menu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8627b0cfebda",
+                                                                           "text":  "kliknuti na badge v levem menu?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-923ea04878ac",
+                                                                           "text":  "Tagy",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f2834bb30903",
+                                                                           "text":  "tagy jsou v historii a v notifikacích",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002686
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f8c7f5db00ba",
+                                                                           "text":  "Muze odkazovat na modul nebo na konkretni objekt",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6947185c0d81",
+                                                                           "text":  "Každý typ tagu muze mit vlastní iconu a barvu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-cece0d0081fa",
+                                                                           "text":  "V ramci historie se michalo vice tagu do jednoho objektu (sel bych spise cestou jeden tag a jedna historie maximalne)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b17894af33f1",
+                                                                           "text":  "Notifikace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c8153a98bcc4",
+                                                                           "text":  "Neposilat zmenit na vypnout -\u003e negenerovat ani",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9786ee7c7131",
+                                                                           "text":  "Notifikace na docházku davkove",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-84757eaeae34",
+                                                                           "text":  "davkove posilani",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-cd7a613f63da",
+                                                                           "text":  "Tabulka všechno notifikaci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-09d72e44cfe4",
+                                                                           "text":  "translationKey, Nazev, Popis, Modul, Role",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b180bb0128fd",
+                                                                           "text":  "Seznam Notifikaci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002688
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:notifikace",
+                        "label":  "Notifikace",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-29a45bc5e6da",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-103e5865b719",
+                                                                           "text":  "// posilat email defaultne",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002689
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:ozabalova-oza",
+                        "label":  "ozabalova - OZA",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-0141b5e67119",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-2ad0897ca991",
+                                                                           "text":  "725995337",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002689
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-d97788978d6d",
+                                                                           "text":  "sestra@zabalova.cz",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002689
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:pavel",
+                        "label":  "Pavel",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-339759957eaf",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-deaf4c3a7712",
+                                                                           "text":  "Co všechno je potřeba při zalozeni zamestnance a při skonceni zamestnance",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-4c8d75d8617b",
+                                                                           "text":  "Evidencni cisla majetku - vede se nejake?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f9506de7f71f",
+                                                                           "text":  "Milan",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-246eeaca3537",
+                                                                           "text":  "dořešit připojení přes nový VPN software (pro všech 5 účtů)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-30a54343d291",
+                                                                           "text":  "MDT stránky - zprovoznění skriptů od Humhala",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-7b46c17a7546",
+                                                                           "text":  "konzultace s modulem Evidence Majetku v novém MDTEKG2",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-55e6a1acbdcc",
+                                                                           "text":  "dokumenty k modulu Sales - v novém MDTEKG2",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-507ae10395e3",
+                                                                           "text":  "schůzky bezpečnosti - zpracování domluvených úkolů",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002690
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6ad2b83b8506",
+                                                                           "text":  "nové počítače - testování Linuxu pro standardní uživatele",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b9a130cb3118",
+                                                                           "text":  "Roman",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b6204aca06ea",
+                                                                           "text":  "Serverovna Praha:",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c1826a0c2658",
+                                                                           "text":  "zprovoznit DMZ",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-2dc48ed668f9",
+                                                                           "text":  "propojení VLAN pro konkrétní IP v pražských VLANách - NAS pro MDETKG2",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-933c28f7a4a1",
+                                                                           "text":  "VPN - možnost více připojení / návrh nového typu zabezpečení",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fd80bd8c9251",
+                                                                           "text":  "Pohoda",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ab31d8ba0b33",
+                                                                           "text":  "migrace serverů Pohody pod jiného poskytovatele",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002691
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:polylang",
+                        "label":  "polylang",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-3399eae5fd82",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-7eaf005d48a5",
+                                                                           "text":  "editorBrix",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002694
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b69c0b0d4977",
+                                                                           "text":  "editace na 2 urovnich",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002694
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-77fe52fcb046",
+                                                                           "text":  "editovat pomoci duplikace stranky a nechat v konceptu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002694
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:pro-michala",
+                        "label":  "pro michala",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-55e7fb98a63c",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-d8e002f9fc03",
+                                                                           "text":  "Popsane vyrize / nevyrizene nebo mozna spis",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002695
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-0aa9611bb4e4",
+                                                                           "text":  "fakturacni adresa zmenit na primarni",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002695
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-39f0d13e3ef4",
+                                                                           "text":  "text adresa -\u003e dorucovaci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002695
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f2dd82238029",
+                                                                           "text":  "pri vybrani predani postou teprve moznost vybrat adresu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002695
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f75abd64ae7c",
+                                                                           "text":  "pri vybrani predani osobni -\u003e vybrat datum a cas",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-3ef45c3d70d0",
+                                                                           "text":  "switch  / checkbox / button na osobni, implicitne postou",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-76f6aadb44e2",
+                                                                           "text":  "Predani -\u003e Doručení přístroje",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-30b2ac6f39a8",
+                                                                           "text":  "Informace o monitorace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ef4454550023",
+                                                                           "text":  "\u003e zrusit doruceni pristroje",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6288cfb4c3d4",
+                                                                           "text":  "Doruceni pristroje s datumem -\u003e taky odebrat",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-3bd9d12a2806",
+                                                                           "text":  "generovani faktury jen s primarni adresou",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fa677b51da10",
+                                                                           "text":  "spodni zdrcnout na polovinu? pocitat s maximem 3 rezervaci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8a8edb0a367c",
+                                                                           "text":  "datum odeslani fakturovat a castka na jeden radek,",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8a65d9aa1d76",
+                                                                           "text":  "adresy -\u003e ikonky mrnave zadne upozorneni opravdu chcete smazat kontakt/ adresu?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-479d43b47674",
+                                                                           "text":  "stin při hoveru,",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-215f0ce1eb8e",
+                                                                           "text":  "sahat do registru jen při kompletním rc",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002696
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-410b83f4d087",
+                                                                           "text":  "zvýraznit vybranou monitoraci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002697
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-749256ca5a39",
+                                                                           "text":  "při kliknuti na informace z registru zobrazit informace z registru",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002697
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-7c2aa9aa97a2",
+                                                                           "text":  "pridat typ monitorace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002697
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-08a871e21e1f",
+                                                                           "text":  "nadpisy informace z registru a předchozí monitorace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002697
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-50b3c44def14",
+                                                                           "text":  "pro vyhledavani pridat validaci na rc",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002697
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:sales",
+                        "label":  "Sales",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-22f492449590",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-29cb7cc65e3e",
+                                                                           "text":  "LATER",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-10cb32f608a7",
+                                                                           "text":  "smazat všechny dokumenty",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9998475a045f",
+                                                                           "text":  "upozorneni arive to date",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-d698c3092f97",
+                                                                           "text":  "Reminders",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-cea6b74aaa67",
+                                                                           "text":  "remindery k tomu co hlidat nebo dokoupeni, co je potřeba ještě dodělat",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-e7c57b152f68",
+                                                                           "text":  "nikita call 5",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c53fe8869b76",
+                                                                           "text":  "Nikita call 7",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-7c2e5e2682ce",
+                                                                           "text":  "FILE_TYPE_EXCHANGE_PROTOCOL - generovani (zacit)",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-785c29cb8ebd",
+                                                                           "text":  "DOKUMENTY",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002699
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-7f72ad5b8dd4",
+                                                                           "text":  "smazat hvezdicky - protokol o zaskoleni",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-a8a52d62a4d4",
+                                                                           "text":  "adresa se neproprsala - protokol o zaskoleni",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-70eee246b167",
+                                                                           "text":  "pridat tlacitko vraceni pristroje ano u pronajmu a zapujcky v dokoncenych",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9e6d1ff9b9e0",
+                                                                           "text":  "pridat mdtekg deponace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ab13366a2fab",
+                                                                           "text":  "dokumenty zz prava? zobrazovat? navaznost roli?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-82af1997e581",
+                                                                           "text":  "placeholder na zaskolovak",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-e20b18f012be",
+                                                                           "text":  "upozorneni",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002700
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:service",
+                        "label":  "service",
+                        "store":  {
+                                      "groups":  [
+
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:todo",
+                        "label":  "TODO",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-84e83473b3cd",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-817446f85be0",
+                                                                           "text":  "advancedfilters to devices",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-0ab342468688",
+                                                                           "text":  "script na nezname pristroje",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-d4257ca996de",
+                                                                           "text":  "texty tlačítek pro ukonceni set kontroly?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c147e6b8136e",
+                                                                           "text":  "2 FAZOVA AUTENTIFIKACE",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6ed9e23c6f51",
+                                                                           "text":  "2fazova autentifikace s Pavlem",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-3f67654875ab",
+                                                                           "text":  "Jaka aplikace?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c8395a77619b",
+                                                                           "text":  "Kdy Zavedeme",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-dacc0041b658",
+                                                                           "text":  "Resetovani hesel",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-a5fcba958327",
+                                                                           "text":  "zadani k i.mdt",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c7efb8384c13",
+                                                                           "text":  "TOKENY oken",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-74777133c5d4",
+                                                                           "text":  "Locking Objects",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-4725be9ac517",
+                                                                           "text":  "pull rebase když je to hambuurger?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-abba6dc1fc3d",
+                                                                           "text":  "BTK - rozpracovane",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-38f7409ae807",
+                                                                           "text":  "DEVICES",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b5fbfd7e3320",
+                                                                           "text":  "Navody",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-00e471a0d749",
+                                                                           "text":  "dohrat na cteni navody na icko",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-41880704b9c2",
+                                                                           "text":  "TODO",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f7feff83bdbf",
+                                                                           "text":  "profilove obrazky - zkontrolovat",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-740b361e2d5a",
+                                                                           "text":  "evidence majetku - zkontrolovat",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9d1e58ec90fe",
+                                                                           "text":  "Notifikace - build - připomenout",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002702
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-8e1979c9afbf",
+                                                                           "text":  "update alfa",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9b2e20f29b3e",
+                                                                           "text":  "opravit informace z registru",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-a380cc8f3bcf",
+                                                                           "text":  "todo user bez roli by nemel byt schopen se prihlasit",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ae84b841727c",
+                                                                           "text":  "nikita dodělat analyzu roli",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:uploadermdt",
+                        "label":  "UploaderMdt",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-0ab87d9add5d",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-8f393c137b55",
+                                                                           "text":  "zjistim snko, nactu seznam souboru, dam na vyber zálohovat / vymazat,",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-760c436ff94d",
+                                                                           "text":  "automaticky zakliknout",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-a610e61e9064",
+                                                                           "text":  "nastavit memory treshold",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6fa25d928c6a",
+                                                                           "text":  "automaticky mazat data / mazat 2 tydny stare data?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-4c0713495162",
+                                                                           "text":  "dodělat progress kolik mista zbyva do dosazeni thresholdu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-0e0e0945ad13",
+                                                                           "text":  "faros muze obsahovat vice edf z ruznych monitoraci plus testovaci edf",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002703
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-557cff28d16a",
+                                                                           "text":  "z edf se da vždy vycist frekvence a cas a pripadne upozornit, ze je potřeba opravit",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-31c338db6fe6",
+                                                                           "text":  "zalohovani -\u003e volitelny cas",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-83663fec7671",
+                                                                           "text":  "spatne seriove číslo uvedene u monitorace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-87248c4e29a0",
+                                                                           "text":  "fronta v icku per session",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-f6804216ac1d",
+                                                                           "text":  "kontrola datumu a hz",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-046c3ad22b48",
+                                                                           "text":  "datum je o 3 mesice jinde nez dnesek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-30288ce30307",
+                                                                           "text":  "1000 Hz studie",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-29a67fa7ac2d",
+                                                                           "text":  "125 Hz offline",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-b8ab6566b24b",
+                                                                           "text":  "250 Hz online",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-e54b6b93493d",
+                                                                           "text":  "automaticke doplnovani casu?",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-011a3b25072d",
+                                                                           "text":  "kombinovani dat z ruznych frekvenci",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ec373377f373",
+                                                                           "text":  "mazat kratke soubory",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-157c0f30a77e",
+                                                                           "text":  "hotove svitit",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-dd7f7b679dfe",
+                                                                           "text":  "chybe hlasky cervene",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c6a19ced9c61",
+                                                                           "text":  "dopsat informace o pacientovi jmeno a nazev nemocnice k danemu nahravani",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002705
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    },
+                    {
+                        "targetId":  "scope:vivalink-navod-todo",
+                        "label":  "Vivalink navod todo",
+                        "store":  {
+                                      "groups":  [
+                                                     {
+                                                         "id":  "group-04282e79a5d2",
+                                                         "name":  "Imported",
+                                                         "groups":  [
+
+                                                                    ],
+                                                         "todos":  [
+                                                                       {
+                                                                           "id":  "todo-0e7c4bce7bdd",
+                                                                           "text":  "ilustracni obrazku pro 2-3",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-1d18cfc3f53d",
+                                                                           "text":  "nechame jen nasazeni EKG Zaznamniku Vivalink nechat prazdne",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-1c125feb80e7",
+                                                                           "text":  "krok 2 zmenit nazev na: Nabijeni zaznamniku před zahajenim monitorace",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c21c8a25375d",
+                                                                           "text":  "krok 3 smazeme",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-560d82430123",
+                                                                           "text":  "krok 4 Pridat na začátek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-532763f59b49",
+                                                                           "text":  "Vyjmete pristroj z... .. elektrod\"",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-ae65dd9b8dac",
+                                                                           "text":  "krok 6 obrazek člověka pridat strana level prava",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-71140c20590c",
+                                                                           "text":  "vygenerovat obrazky s nalepenym vivalinkem",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-c2845affae22",
+                                                                           "text":  "Stav telefonu Hledam zaznamnik -\u003e Zkontrolujte pripojeni elektrod se zmeni",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002707
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-6148250ca109",
+                                                                           "text":  "vymenit obrazek",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002708
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-62e8666fab8e",
+                                                                           "text":  "odlepovaani",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002708
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-fc90597c32c4",
+                                                                           "text":  "zvýraznit, ze z tela zluta a z přístroje cervena",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002708
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-9afe7aaf24fe",
+                                                                           "text":  "Nabijejni mobilního telefonu",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002708
+                                                                       },
+                                                                       {
+                                                                           "id":  "todo-99f865dea488",
+                                                                           "text":  "pro bezchybny provoz... 1x za den -\u003e nabijte telefon 1x za den",
+                                                                           "done":  false,
+                                                                           "createdAt":  1773878002708
+                                                                       }
+                                                                   ]
+                                                     }
+                                                 ],
+                                      "hideCompleted":  false,
+                                      "expandGroups":  true,
+                                      "sectionCollapsed":  false,
+                                      "collapsedGroupIds":  [
+
+                                                            ]
+                                  }
+                    }
+                ]
+}
