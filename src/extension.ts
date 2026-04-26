@@ -1,147 +1,177 @@
 import * as vscode from "vscode";
+import { storageManager, type SharedListRecord } from "./services/storage";
 
-type StorageMode = "workspace" | "profile";
-type ViewMode = "all" | "workspace";
-type StoreTargetId = string;
+type ListId = string;
+type GroupId = string;
+type TodoId = string;
+type ListSource = "local" | "shared";
 
-interface TodoItem {
-  id: string;
+export interface TodoItem {
+  id: TodoId;
   text: string;
   done: boolean;
   createdAt: number;
   completedAt?: number;
 }
 
-interface TodoGroup {
-  id: string;
+export interface TodoGroup {
+  id: GroupId;
   name: string;
   groups: TodoGroup[];
   todos: TodoItem[];
 }
 
-interface TodoStore {
+export interface TodoStore {
   groups: TodoGroup[];
-  hideCompleted: boolean;
-  expandGroups: boolean;
-  sectionCollapsed: boolean;
-  collapsedGroupIds: string[];
+  todos: TodoItem[];
 }
 
-interface SharedScope {
+export interface TodoList {
+  id: ListId;
+  name: string;
+  createdAt: number;
+  store: TodoStore;
+}
+
+export interface ShellState {
+  lists: boolean;
+}
+
+interface LegacyTodoStore {
+  groups?: TodoGroup[];
+  todos?: TodoItem[];
+}
+
+interface LegacySharedScope {
   id: string;
   name: string;
   createdAt: number;
 }
 
-interface ScopeRegistry {
-  scopes: SharedScope[];
-  links: Record<string, string>;
-  stores: Record<string, TodoStore>;
-}
-
-interface ListTarget {
-  id: StoreTargetId;
-  label: string;
-  description: string;
-}
-
-interface ShellState {
-  main: boolean;
-  lists: boolean;
-  viewList: boolean;
-  transfer: boolean;
-}
-
-interface ExportEntry {
-  targetId: StoreTargetId;
-  label: string;
-  store: TodoStore;
+interface LegacyScopeRegistry {
+  scopes?: LegacySharedScope[];
+  stores?: Record<string, LegacyTodoStore | undefined>;
 }
 
 interface ExportPayload {
-  version: 1;
+  version: 2;
   exportedAt: string;
-  entries: ExportEntry[];
+  entries: Array<{ list: TodoList }>;
 }
 
 type WebviewAction =
   | { type: "setFilter"; value: string }
   | { type: "clearFilter" }
-  | { type: "addRootGroup"; mode?: StorageMode; targetId?: StoreTargetId }
-  | { type: "addSubgroup"; mode?: StorageMode; targetId?: StoreTargetId; groupId: string }
-  | { type: "addTodo"; mode?: StorageMode; targetId?: StoreTargetId; groupId?: string }
-  | { type: "toggleDone"; mode?: StorageMode; targetId?: StoreTargetId; todoId: string }
-  | { type: "deleteGroup"; mode?: StorageMode; targetId?: StoreTargetId; groupId: string }
-  | { type: "deleteTodo"; mode?: StorageMode; targetId?: StoreTargetId; todoId: string }
-  | { type: "setExpandAll" }
-  | { type: "setCollapseAll" }
-  | { type: "setSectionExpand"; mode?: StorageMode; targetId?: StoreTargetId; expand: boolean }
-  | { type: "toggleSectionCollapsed"; mode?: StorageMode; targetId?: StoreTargetId }
-  | { type: "toggleGroupCardCollapsed"; mode?: StorageMode; targetId?: StoreTargetId; groupId: string }
-  | { type: "toggleHideCompleted"; mode?: StorageMode; targetId?: StoreTargetId }
-  | { type: "setViewMode"; viewMode: ViewMode }
-  | { type: "createWorkspaceLink" }
-  | { type: "linkWorkspaceToScope" }
-  | { type: "unlinkWorkspaceScope" }
-  | { type: "selectTarget"; targetId: StoreTargetId }
-  | { type: "toggleShellSection"; shellId: "main" | "lists" | "viewList" | "transfer" }
+  | { type: "toggleShellSection"; shellId: keyof ShellState }
+  | { type: "toggleListExpanded"; listId: ListId; source?: ListSource }
+  | { type: "addList" }
+  | { type: "addGroup"; listId: ListId; groupId?: GroupId; source?: ListSource }
+  | { type: "addTodo"; listId: ListId; groupId?: GroupId; source?: ListSource }
+  | { type: "quickAddTodo"; listId: ListId; text: string; groupId?: GroupId; source?: ListSource }
+  | { type: "renameList"; listId: ListId; source?: ListSource }
+  | { type: "renameGroup"; listId: ListId; groupId: GroupId; source?: ListSource }
+  | { type: "renameTodo"; listId: ListId; todoId: TodoId; source?: ListSource }
+  | { type: "toggleDone"; listId: ListId; todoId: TodoId; source?: ListSource }
+  | { type: "deleteTodo"; listId: ListId; todoId: TodoId; source?: ListSource }
+  | { type: "deleteGroup"; listId: ListId; groupId: GroupId; source?: ListSource }
+  | { type: "deleteList"; listId: ListId; source?: ListSource }
   | { type: "exportAll" }
-  | { type: "exportTarget"; targetId: StoreTargetId }
-  | { type: "importData"; targetId?: StoreTargetId }
-  | { type: "clearTarget"; targetId: StoreTargetId }
-  | { type: "deleteTarget"; targetId: StoreTargetId }
-  | { type: "moveTargetToGroup"; sourceTargetId: StoreTargetId; targetId: StoreTargetId; groupId: string }
-  | { type: "refresh" };
+  | { type: "exportList"; listId: ListId }
+  | { type: "importData" }
+  | { type: "moveTodo"; sourceListId: ListId; todoId: TodoId; targetListId: ListId; targetGroupId?: GroupId; source?: ListSource }
+  | { type: "moveGroup"; sourceListId: ListId; groupId: GroupId; targetListId: ListId; targetGroupId?: GroupId; source?: ListSource }
+  | { type: "refresh" }
+  | { type: "shareCurrentList"; listId?: ListId; source?: ListSource }
+  | { type: "openListInEditor"; listId: ListId; source?: ListSource }
+  | { type: "copyShareKey"; listId: ListId; source?: ListSource }
+  | { type: "addSharedList" }
+  | { type: "copyLocalListToShareMode" }
+  | { type: "syncSharedList"; listId?: ListId; source?: ListSource };
+
+interface RenderedList {
+  source: ListSource;
+  id: string;
+  displayId: string;
+  name: string;
+  createdAt: number;
+  store: TodoStore;
+  record?: SharedListRecord;
+  sharedBadge?: string;
+}
 
 class TodoState {
-  private static readonly WORKSPACE_KEY = "todoListPro.store.workspace";
-  private static readonly PROFILE_KEY = "todoListPro.store.profile";
+  private static readonly LISTS_KEY = "todoListPro.lists";
   private static readonly FILTER_KEY = "todoListPro.ui.filter";
-  private static readonly VIEW_MODE_KEY = "todoListPro.ui.viewMode";
-  private static readonly SELECTED_TARGET_KEY = "todoListPro.ui.selectedTarget";
+  private static readonly VISIBLE_LIST_IDS_KEY = "todoListPro.ui.visibleListIds";
+  private static readonly EXPANDED_LIST_ID_KEY = "todoListPro.ui.expandedListId";
   private static readonly SHELL_STATE_KEY = "todoListPro.ui.shellState";
-  private static readonly SCOPE_REGISTRY_KEY = "todoListPro.workspaceScopes";
-  private readonly context: vscode.ExtensionContext;
+  private static readonly LEGACY_WORKSPACE_KEY = "todoListPro.store.workspace";
+  private static readonly LEGACY_PROFILE_KEY = "todoListPro.store.profile";
+  private static readonly LEGACY_SCOPE_REGISTRY_KEY = "todoListPro.workspaceScopes";
 
-  public constructor(context: vscode.ExtensionContext) {
-    this.context = context;
-    this.context.globalState.setKeysForSync([TodoState.PROFILE_KEY, TodoState.SCOPE_REGISTRY_KEY]);
+  private initPromise?: Promise<void>;
+
+  public constructor(private readonly context: vscode.ExtensionContext) {
+    this.context.globalState.setKeysForSync([TodoState.LISTS_KEY]);
   }
 
-  public readStore(mode: StorageMode): TodoStore {
-    const raw =
-      mode === "workspace"
-        ? this.readWorkspaceStore()
-        : this.context.globalState.get<TodoStore | undefined>(TodoState.PROFILE_KEY);
-    const hideDefault = vscode.workspace
-      .getConfiguration("todoListPro")
-      .get<boolean>("hideCompletedByDefault", false);
-
-    if (!raw) {
-      return {
-        groups: [],
-        hideCompleted: hideDefault,
-        expandGroups: true,
-        sectionCollapsed: false,
-        collapsedGroupIds: []
-      };
+  public async ensureInitialized(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initialize();
     }
+    await this.initPromise;
+  }
 
-    return {
-      groups: raw.groups ?? [],
-      hideCompleted: raw.hideCompleted ?? hideDefault,
-      expandGroups: raw.expandGroups ?? true,
-      sectionCollapsed: raw.sectionCollapsed ?? false,
-      collapsedGroupIds: raw.collapsedGroupIds ?? []
+  public listLists(): TodoList[] {
+    return this.readLists().sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name));
+  }
+
+  public getList(listId: ListId): TodoList | undefined {
+    return this.readLists().find((list) => list.id === listId);
+  }
+
+  public async createList(name: string): Promise<TodoList> {
+    const lists = this.readLists();
+    const list: TodoList = {
+      id: this.newId("list"),
+      name: name.trim(),
+      createdAt: Date.now(),
+      store: { groups: [], todos: [] }
     };
+    lists.push(list);
+    await this.writeLists(lists);
+    await this.ensureListVisible(list.id);
+    await this.ensureExpandedListIsValid();
+    return list;
   }
 
-  public async writeStore(mode: StorageMode, store: TodoStore): Promise<void> {
-    if (mode === "workspace") {
-      await this.writeWorkspaceStore(store);
-      return;
+  public async updateList(listId: ListId, updater: (list: TodoList) => void): Promise<boolean> {
+    const lists = this.readLists();
+    const list = lists.find((item) => item.id === listId);
+    if (!list) {
+      return false;
     }
-    await this.context.globalState.update(TodoState.PROFILE_KEY, store);
+    updater(list);
+    list.store = this.normalizeStore(list.store);
+    await this.writeLists(lists);
+    return true;
+  }
+
+  public async deleteList(listId: ListId): Promise<boolean> {
+    const lists = this.readLists();
+    const next = lists.filter((list) => list.id !== listId);
+    if (next.length === lists.length) {
+      return false;
+    }
+    await this.writeLists(next);
+    await this.context.workspaceState.update(
+      TodoState.VISIBLE_LIST_IDS_KEY,
+      this.readVisibleListIds().filter((id) => id !== listId)
+    );
+    if (this.readExpandedListId() === listId) {
+      await this.context.workspaceState.update(TodoState.EXPANDED_LIST_ID_KEY, undefined);
+    }
+    return true;
   }
 
   public readFilter(): string {
@@ -152,246 +182,170 @@ class TodoState {
     await this.context.workspaceState.update(TodoState.FILTER_KEY, value.trim());
   }
 
-  public readViewMode(): ViewMode {
-    return this.context.workspaceState.get<ViewMode>(TodoState.VIEW_MODE_KEY, "all");
+  public readVisibleListIds(): ListId[] {
+    const currentIds = new Set(this.readLists().map((list) => list.id));
+    const stored = this.context.workspaceState.get<ListId[] | undefined>(TodoState.VISIBLE_LIST_IDS_KEY);
+    if (!stored || stored.length === 0) {
+      return [...currentIds];
+    }
+    const filtered = stored.filter((id) => currentIds.has(id));
+    return filtered.length > 0 ? filtered : [...currentIds];
   }
 
-  public async setViewMode(viewMode: ViewMode): Promise<void> {
-    await this.context.workspaceState.update(TodoState.VIEW_MODE_KEY, viewMode);
+  public async ensureListVisible(listId: ListId): Promise<void> {
+    const visible = this.readVisibleListIds();
+    if (!visible.includes(listId)) {
+      await this.context.workspaceState.update(TodoState.VISIBLE_LIST_IDS_KEY, [...visible, listId]);
+    }
   }
 
-  public readSelectedTarget(): StoreTargetId {
-    return this.context.workspaceState.get<StoreTargetId>(TodoState.SELECTED_TARGET_KEY, "workspace");
+  public async toggleListVisibility(listId: ListId): Promise<void> {
+    const orderedIds = this.listLists().map((list) => list.id);
+    const visible = new Set(this.readVisibleListIds());
+    if (visible.has(listId)) {
+      visible.delete(listId);
+    } else {
+      visible.add(listId);
+    }
+    const nextVisible = orderedIds.filter((id) => visible.has(id));
+    await this.context.workspaceState.update(TodoState.VISIBLE_LIST_IDS_KEY, nextVisible);
+    if (!nextVisible.includes(this.readExpandedListId() ?? "")) {
+      await this.context.workspaceState.update(TodoState.EXPANDED_LIST_ID_KEY, nextVisible[0]);
+    }
   }
 
-  public async setSelectedTarget(targetId: StoreTargetId): Promise<void> {
-    await this.context.workspaceState.update(TodoState.SELECTED_TARGET_KEY, targetId);
+  public readExpandedListId(): ListId | undefined {
+    return this.context.workspaceState.get<ListId | undefined>(TodoState.EXPANDED_LIST_ID_KEY);
+  }
+
+  public async setExpandedListId(listId?: ListId): Promise<void> {
+    await this.context.workspaceState.update(TodoState.EXPANDED_LIST_ID_KEY, listId);
+  }
+
+  public async ensureExpandedListIsValid(): Promise<void> {
+    const visible = this.readVisibleListIds();
+    const expanded = this.readExpandedListId();
+    if (expanded && visible.includes(expanded)) {
+      return;
+    }
+    await this.context.workspaceState.update(TodoState.EXPANDED_LIST_ID_KEY, visible[0]);
   }
 
   public readShellState(): ShellState {
     const raw = this.context.workspaceState.get<Partial<ShellState> | undefined>(TodoState.SHELL_STATE_KEY);
-    return {
-      main: raw?.main ?? true,
-      lists: raw?.lists ?? false,
-      viewList: raw?.viewList ?? false,
-      transfer: raw?.transfer ?? false
-    };
+    return { lists: raw?.lists ?? true };
   }
 
   public async setShellState(shellState: ShellState): Promise<void> {
     await this.context.workspaceState.update(TodoState.SHELL_STATE_KEY, shellState);
   }
 
-  public getWorkspaceScope(): SharedScope | undefined {
-    const registry = this.readScopeRegistry();
-    const scopeId = registry.links[this.getWorkspaceFingerprint()];
-    if (!scopeId) {
-      return undefined;
+  public getCompletedRetentionDays(): number {
+    const value = vscode.workspace.getConfiguration("todoListPro").get<number>("completedRetentionDays", 8);
+    return Math.max(1, Math.floor(Number.isFinite(value) ? value : 8));
+  }
+
+  public async setCompletedRetentionDays(days: number): Promise<void> {
+    await vscode.workspace
+      .getConfiguration("todoListPro")
+      .update("completedRetentionDays", Math.max(1, Math.floor(days)), vscode.ConfigurationTarget.Global);
+  }
+
+  public async reload(): Promise<void> {
+    this.initPromise = undefined;
+    await this.ensureInitialized();
+  }
+
+  private async initialize(): Promise<void> {
+    const current = this.context.globalState.get<TodoList[] | undefined>(TodoState.LISTS_KEY);
+    if (!current) {
+      const migrated = this.migrateLegacyData();
+      await this.writeLists(migrated);
+      await this.context.workspaceState.update(
+        TodoState.VISIBLE_LIST_IDS_KEY,
+        migrated.map((list) => list.id)
+      );
+      await this.context.workspaceState.update(TodoState.EXPANDED_LIST_ID_KEY, migrated[0]?.id);
+      return;
     }
-    return registry.scopes.find((scope) => scope.id === scopeId);
+
+    await this.writeLists(current);
+    if (!this.context.workspaceState.get(TodoState.VISIBLE_LIST_IDS_KEY)) {
+      await this.context.workspaceState.update(
+        TodoState.VISIBLE_LIST_IDS_KEY,
+        this.readLists().map((list) => list.id)
+      );
+    }
+    await this.ensureExpandedListIsValid();
   }
 
-  public listWorkspaceScopes(): SharedScope[] {
-    return [...this.readScopeRegistry().scopes].sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  public listTargets(): ListTarget[] {
-    const currentScope = this.getWorkspaceScope();
-    const scopeTargets = this.listWorkspaceScopes().map((scope) => ({
-      id: `scope:${scope.id}`,
-      label: scope.name,
-      description: currentScope?.id === scope.id ? "shared current workspace" : "shared workspace project"
+  private readLists(): TodoList[] {
+    const raw = this.context.globalState.get<TodoList[] | undefined>(TodoState.LISTS_KEY) ?? [];
+    return raw.map((list, index) => ({
+      id: typeof list?.id === "string" && list.id ? list.id : this.newId(`list-${index}`),
+      name: typeof list?.name === "string" && list.name.trim() ? list.name.trim() : `List ${index + 1}`,
+      createdAt: typeof list?.createdAt === "number" ? list.createdAt : Date.now(),
+      store: this.normalizeStore(list?.store)
     }));
-
-    return [
-      { id: "workspace", label: "Current Workspace", description: currentScope ? `linked to ${currentScope.name}` : "local workspace" },
-      { id: "profile", label: "Profile", description: "global synced TODOs" },
-      ...scopeTargets
-    ];
   }
 
-  public readTargetStore(targetId: StoreTargetId): TodoStore {
-    if (targetId === "workspace") {
-      return this.readStore("workspace");
-    }
-    if (targetId === "profile") {
-      return this.readStore("profile");
-    }
-    if (targetId.startsWith("scope:")) {
-      const scopeId = targetId.slice("scope:".length);
-      const registry = this.readScopeRegistry();
-      const raw = registry.stores[scopeId];
-      const hideDefault = vscode.workspace
-        .getConfiguration("todoListPro")
-        .get<boolean>("hideCompletedByDefault", false);
-
-      return {
-        groups: raw?.groups ?? [],
-        hideCompleted: raw?.hideCompleted ?? hideDefault,
-        expandGroups: raw?.expandGroups ?? true,
-        sectionCollapsed: raw?.sectionCollapsed ?? false,
-        collapsedGroupIds: raw?.collapsedGroupIds ?? []
-      };
-    }
-
-    return this.readStore("workspace");
+  private async writeLists(lists: TodoList[]): Promise<void> {
+    await this.context.globalState.update(
+      TodoState.LISTS_KEY,
+      lists.map((list) => ({ ...list, store: this.normalizeStore(list.store) }))
+    );
   }
 
-  public async writeTargetStore(targetId: StoreTargetId, store: TodoStore): Promise<void> {
-    if (targetId === "workspace") {
-      await this.writeStore("workspace", store);
-      return;
+  private migrateLegacyData(): TodoList[] {
+    const lists: TodoList[] = [];
+    const workspaceStore = this.context.workspaceState.get<LegacyTodoStore | undefined>(TodoState.LEGACY_WORKSPACE_KEY);
+    if (workspaceStore) {
+      lists.push({ id: this.newId("migrated"), name: "Workspace", createdAt: Date.now(), store: this.normalizeStore(workspaceStore) });
     }
-    if (targetId === "profile") {
-      await this.writeStore("profile", store);
-      return;
+    const profileStore = this.context.globalState.get<LegacyTodoStore | undefined>(TodoState.LEGACY_PROFILE_KEY);
+    if (profileStore) {
+      lists.push({ id: this.newId("migrated"), name: "Profile", createdAt: Date.now(), store: this.normalizeStore(profileStore) });
     }
-    if (targetId.startsWith("scope:")) {
-      const scopeId = targetId.slice("scope:".length);
-      const registry = this.readScopeRegistry();
-      registry.stores[scopeId] = store;
-      await this.writeScopeRegistry(registry);
-      return;
-    }
-  }
-
-  public async createWorkspaceScope(name: string): Promise<SharedScope> {
-    const registry = this.readScopeRegistry();
-    const scope: SharedScope = {
-      id: this.newId("scope"),
-      name: name.trim(),
-      createdAt: Date.now()
-    };
-    registry.scopes.push(scope);
-    registry.stores[scope.id] = this.readStore("workspace");
-    registry.links[this.getWorkspaceFingerprint()] = scope.id;
-    await this.writeScopeRegistry(registry);
-    return scope;
-  }
-
-  public async linkWorkspaceToScope(scopeId: string): Promise<void> {
-    const registry = this.readScopeRegistry();
-    const scope = registry.scopes.find((item) => item.id === scopeId);
-    if (!scope) {
-      return;
-    }
-
-    if (!registry.stores[scopeId]) {
-      registry.stores[scopeId] = this.readStore("workspace");
-    }
-
-    registry.links[this.getWorkspaceFingerprint()] = scopeId;
-    await this.writeScopeRegistry(registry);
-  }
-
-  public async unlinkWorkspaceScope(): Promise<void> {
-    const registry = this.readScopeRegistry();
-    const currentStore = this.readStore("workspace");
-    await this.context.workspaceState.update(TodoState.WORKSPACE_KEY, currentStore);
-    delete registry.links[this.getWorkspaceFingerprint()];
-    await this.writeScopeRegistry(registry);
-  }
-
-  public async ensureImportTarget(targetId: StoreTargetId, label: string): Promise<StoreTargetId> {
-    if (targetId === "workspace" || targetId === "profile") {
-      return targetId;
-    }
-
-    if (targetId.startsWith("scope:")) {
-      const scopeId = targetId.slice("scope:".length);
-      const registry = this.readScopeRegistry();
-      const existing = registry.scopes.find((scope) => scope.id === scopeId);
-      if (existing) {
-        return targetId;
+    const registry = this.context.globalState.get<LegacyScopeRegistry | undefined>(TodoState.LEGACY_SCOPE_REGISTRY_KEY);
+    for (const scope of registry?.scopes ?? []) {
+      const store = registry?.stores?.[scope.id];
+      if (!store) {
+        continue;
       }
-
-      registry.scopes.push({
-        id: scopeId,
-        name: label,
-        createdAt: Date.now()
+      lists.push({
+        id: this.newId("migrated"),
+        name: scope.name || "Imported List",
+        createdAt: typeof scope.createdAt === "number" ? scope.createdAt : Date.now(),
+        store: this.normalizeStore(store)
       });
-      if (!registry.stores[scopeId]) {
-        registry.stores[scopeId] = this.readStore("workspace");
-      }
-      await this.writeScopeRegistry(registry);
-      return targetId;
     }
-
-    return "workspace";
+    return lists;
   }
 
-  public async deleteTarget(targetId: StoreTargetId): Promise<boolean> {
-    if (!targetId.startsWith("scope:")) {
-      return false;
-    }
-
-    const scopeId = targetId.slice("scope:".length);
-    const registry = this.readScopeRegistry();
-    const exists = registry.scopes.some((scope) => scope.id === scopeId);
-    if (!exists) {
-      return false;
-    }
-
-    registry.scopes = registry.scopes.filter((scope) => scope.id !== scopeId);
-    delete registry.stores[scopeId];
-    for (const [fingerprint, linkedScopeId] of Object.entries(registry.links)) {
-      if (linkedScopeId === scopeId) {
-        delete registry.links[fingerprint];
-      }
-    }
-
-    await this.writeScopeRegistry(registry);
-    return true;
-  }
-
-  private readWorkspaceStore(): TodoStore | undefined {
-    const scope = this.getWorkspaceScope();
-    if (!scope) {
-      return this.readLocalWorkspaceStore();
-    }
-    const registry = this.readScopeRegistry();
-    return registry.stores[scope.id];
-  }
-
-  private async writeWorkspaceStore(store: TodoStore): Promise<void> {
-    const scope = this.getWorkspaceScope();
-    if (!scope) {
-      await this.context.workspaceState.update(TodoState.WORKSPACE_KEY, store);
-      return;
-    }
-
-    const registry = this.readScopeRegistry();
-    registry.stores[scope.id] = store;
-    await this.writeScopeRegistry(registry);
-  }
-
-  private readLocalWorkspaceStore(): TodoStore | undefined {
-    return this.context.workspaceState.get<TodoStore | undefined>(TodoState.WORKSPACE_KEY);
-  }
-
-  private readScopeRegistry(): ScopeRegistry {
-    const raw = this.context.globalState.get<ScopeRegistry | undefined>(TodoState.SCOPE_REGISTRY_KEY);
-    if (!raw) {
-      return { scopes: [], links: {}, stores: {} };
-    }
+  private normalizeStore(raw?: Partial<TodoStore> | LegacyTodoStore): TodoStore {
     return {
-      scopes: raw.scopes ?? [],
-      links: raw.links ?? {},
-      stores: raw.stores ?? {}
+      groups: this.normalizeGroups(raw?.groups ?? []),
+      todos: this.normalizeTodos((raw as TodoStore | undefined)?.todos ?? [])
     };
   }
 
-  private async writeScopeRegistry(registry: ScopeRegistry): Promise<void> {
-    await this.context.globalState.update(TodoState.SCOPE_REGISTRY_KEY, registry);
+  private normalizeGroups(groups: TodoGroup[]): TodoGroup[] {
+    return (groups ?? []).map((group, index) => ({
+      id: typeof group?.id === "string" && group.id ? group.id : this.newId(`group-${index}`),
+      name: typeof group?.name === "string" && group.name.trim() ? group.name.trim() : "Untitled group",
+      groups: this.normalizeGroups(group?.groups ?? []),
+      todos: this.normalizeTodos(group?.todos ?? [])
+    }));
   }
 
-  private getWorkspaceFingerprint(): string {
-    const folders = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.toString()).sort() ?? [];
-    if (folders.length > 0) {
-      return folders.join("|");
-    }
-    const workspaceFile = vscode.workspace.workspaceFile?.toString();
-    return workspaceFile ?? "empty-window";
+  private normalizeTodos(todos: TodoItem[]): TodoItem[] {
+    return (todos ?? []).map((todo, index) => ({
+      id: typeof todo?.id === "string" && todo.id ? todo.id : this.newId(`todo-${index}`),
+      text: typeof todo?.text === "string" ? todo.text : "",
+      done: Boolean(todo?.done),
+      createdAt: typeof todo?.createdAt === "number" ? todo.createdAt : Date.now(),
+      completedAt: typeof todo?.completedAt === "number" ? todo.completedAt : undefined
+    }));
   }
 
   private newId(prefix: string): string {
@@ -401,12 +355,24 @@ class TodoState {
 
 class TodoController implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
+  private editorPanel?: vscode.WebviewPanel;
+  private editorTarget?: { listId: ListId; source: ListSource };
+  private sharedListsCache: SharedListRecord[] = [];
+  private autoRefreshTimer?: NodeJS.Timeout;
+  private autoRefreshEnabled = vscode.workspace.getConfiguration("todoListPro").get<boolean>("autoRefreshSharedLists", false);
+  private readonly autoRefreshIntervalMs = 5 * 60 * 1000;
 
-  public constructor(private readonly state: TodoState) {}
+  public constructor(
+    private readonly state: TodoState,
+    private readonly extensionUri: vscode.Uri
+  ) {}
 
   public resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")]
+    };
     webviewView.webview.onDidReceiveMessage(async (message: WebviewAction) => {
       await this.handleAction(message);
     });
@@ -414,21 +380,337 @@ class TodoController implements vscode.WebviewViewProvider {
   }
 
   public async refresh(): Promise<void> {
-    await this.cleanupExpiredCompletedTodos("workspace");
-    await this.cleanupExpiredCompletedTodos("profile");
-
-    if (!this.view) {
-      return;
+    await this.state.ensureInitialized();
+    await this.cleanupExpiredCompletedTodos();
+    await storageManager.sync();
+    this.sharedListsCache = await storageManager.listSharedLists();
+    this.updateAutoRefreshTimer();
+    if (this.view) {
+      this.view.webview.html = this.renderHtml();
     }
-    this.view.webview.html = this.renderHtml();
+    if (this.editorPanel) {
+      this.editorPanel.webview.html = this.renderEditorHtml();
+    }
   }
 
-  public async setFilter(filter: string): Promise<void> {
-    const next = filter.trim();
-    if (this.state.readFilter() === next) {
+  public async addList(): Promise<void> {
+    const name = await vscode.window.showInputBox({ prompt: "List name", placeHolder: "e.g. CRM Backend" });
+    if (!name?.trim()) {
       return;
     }
-    await this.state.setFilter(next);
+    const list = await this.state.createList(name);
+    await this.state.setExpandedListId(list.id);
+    await this.refresh();
+  }
+
+  public async addGroup(listId: ListId, groupId?: GroupId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const parent = groupId ? this.findGroupById(record.snapshot.store.groups, groupId) : undefined;
+      const name = await vscode.window.showInputBox({
+        prompt: parent ? `Subgroup name in "${parent.name}"` : `Group name in "${record.listName}"`,
+        placeHolder: "e.g. Backend"
+      });
+      if (!name?.trim()) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (target) => {
+        const next: TodoGroup = { id: this.newId("group"), name: name.trim(), groups: [], todos: [] };
+        if (groupId) {
+          const current = this.findGroupById(target.store.groups, groupId);
+          if (current) {
+            current.groups.push(next);
+          }
+        } else {
+          target.store.groups.push(next);
+        }
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    if (!list) {
+      return;
+    }
+    const parent = groupId ? this.findGroupById(list.store.groups, groupId) : undefined;
+    const name = await vscode.window.showInputBox({
+      prompt: parent ? `Subgroup name in "${parent.name}"` : `Group name in "${list.name}"`,
+      placeHolder: "e.g. Backend"
+    });
+    if (!name?.trim()) {
+      return;
+    }
+    await this.state.updateList(listId, (target) => {
+      const next: TodoGroup = { id: this.newId("group"), name: name.trim(), groups: [], todos: [] };
+      if (groupId) {
+        const current = this.findGroupById(target.store.groups, groupId);
+        if (current) {
+          current.groups.push(next);
+        }
+      } else {
+        target.store.groups.push(next);
+      }
+    });
+    await this.state.ensureListVisible(listId);
+    await this.state.setExpandedListId(listId);
+    await this.refresh();
+  }
+
+  public async addTodo(listId: ListId, groupId?: GroupId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const group = groupId ? this.findGroupById(record.snapshot.store.groups, groupId) : undefined;
+      const text = await vscode.window.showInputBox({
+        prompt: group ? `TODO text in "${group.name}"` : `TODO text in "${record.listName}"`,
+        placeHolder: "e.g. Add API validation"
+      });
+      if (!text?.trim()) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (target) => {
+        const todo: TodoItem = { id: this.newId("todo"), text: text.trim(), done: false, createdAt: Date.now() };
+        if (groupId) {
+          const current = this.findGroupById(target.store.groups, groupId);
+          if (current) {
+            current.todos.push(todo);
+          }
+        } else {
+          target.store.todos.push(todo);
+        }
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    if (!list) {
+      return;
+    }
+    const group = groupId ? this.findGroupById(list.store.groups, groupId) : undefined;
+    const text = await vscode.window.showInputBox({
+      prompt: group ? `TODO text in "${group.name}"` : `TODO text in "${list.name}"`,
+      placeHolder: "e.g. Add API validation"
+    });
+    if (!text?.trim()) {
+      return;
+    }
+    await this.state.updateList(listId, (target) => {
+      const todo: TodoItem = { id: this.newId("todo"), text: text.trim(), done: false, createdAt: Date.now() };
+      if (groupId) {
+        const current = this.findGroupById(target.store.groups, groupId);
+        if (current) {
+          current.todos.push(todo);
+        }
+      } else {
+        target.store.todos.push(todo);
+      }
+    });
+    await this.state.ensureListVisible(listId);
+    await this.state.setExpandedListId(listId);
+    await this.refresh();
+  }
+
+  public async quickAddTodo(listId: ListId, text: string, groupId?: GroupId, source: ListSource = "local"): Promise<void> {
+    const value = text.trim();
+    if (!value) {
+      return;
+    }
+
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (target) => {
+        const todo: TodoItem = { id: this.newId("todo"), text: value, done: false, createdAt: Date.now() };
+        if (groupId) {
+          const current = this.findGroupById(target.store.groups, groupId);
+          if (current) {
+            current.todos.push(todo);
+          }
+        } else {
+          target.store.todos.push(todo);
+        }
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    if (!list) {
+      return;
+    }
+
+    await this.state.updateList(listId, (target) => {
+      const todo: TodoItem = { id: this.newId("todo"), text: value, done: false, createdAt: Date.now() };
+      if (groupId) {
+        const current = this.findGroupById(target.store.groups, groupId);
+        if (current) {
+          current.todos.push(todo);
+        }
+      } else {
+        target.store.todos.push(todo);
+      }
+    });
+    await this.state.ensureListVisible(listId);
+    await this.state.setExpandedListId(listId);
+    await this.refresh();
+  }
+
+  public async renameList(listId: ListId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const name = await vscode.window.showInputBox({
+        prompt: "Rename list",
+        value: record.listName,
+        placeHolder: "e.g. CRM Backend"
+      });
+      if (!name?.trim() || name.trim() === record.listName) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (target) => {
+        target.name = name.trim();
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    if (!list) {
+      return;
+    }
+    const name = await vscode.window.showInputBox({
+      prompt: "Rename list",
+      value: list.name,
+      placeHolder: "e.g. CRM Backend"
+    });
+    if (!name?.trim() || name.trim() === list.name) {
+      return;
+    }
+    await this.state.updateList(listId, (target) => {
+      target.name = name.trim();
+    });
+    await this.refresh();
+  }
+
+  public async renameGroup(listId: ListId, groupId: GroupId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const group = record ? this.findGroupById(record.snapshot.store.groups, groupId) : undefined;
+      if (!group) {
+        return;
+      }
+      const name = await vscode.window.showInputBox({
+        prompt: "Rename folder",
+        value: group.name,
+        placeHolder: "e.g. Backend"
+      });
+      if (!name?.trim() || name.trim() === group.name) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (target) => {
+        const current = this.findGroupById(target.store.groups, groupId);
+        if (current) {
+          current.name = name.trim();
+        }
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    const group = list ? this.findGroupById(list.store.groups, groupId) : undefined;
+    if (!group) {
+      return;
+    }
+    const name = await vscode.window.showInputBox({
+      prompt: "Rename folder",
+      value: group.name,
+      placeHolder: "e.g. Backend"
+    });
+    if (!name?.trim() || name.trim() === group.name) {
+      return;
+    }
+    await this.state.updateList(listId, (target) => {
+      const current = this.findGroupById(target.store.groups, groupId);
+      if (current) {
+        current.name = name.trim();
+      }
+    });
+    await this.refresh();
+  }
+
+  public async renameTodo(listId: ListId, todoId: TodoId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const todo = record ? this.findTodo(record.snapshot.store, todoId) : undefined;
+      if (!todo) {
+        return;
+      }
+      const text = await vscode.window.showInputBox({
+        prompt: "Rename task",
+        value: todo.text,
+        placeHolder: "e.g. Add API validation"
+      });
+      if (!text?.trim() || text.trim() === todo.text) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (target) => {
+        const current = this.findTodo(target.store, todoId);
+        if (current) {
+          current.text = text.trim();
+        }
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    const todo = list ? this.findTodo(list.store, todoId) : undefined;
+    if (!todo) {
+      return;
+    }
+    const text = await vscode.window.showInputBox({
+      prompt: "Rename task",
+      value: todo.text,
+      placeHolder: "e.g. Add API validation"
+    });
+    if (!text?.trim() || text.trim() === todo.text) {
+      return;
+    }
+    await this.state.updateList(listId, (target) => {
+      const current = this.findTodo(target.store, todoId);
+      if (current) {
+        current.text = text.trim();
+      }
+    });
+    await this.refresh();
+  }
+
+  public async setFilter(value: string): Promise<void> {
+    await this.state.setFilter(value);
     await this.refresh();
   }
 
@@ -436,369 +718,688 @@ class TodoController implements vscode.WebviewViewProvider {
     await this.setFilter("");
   }
 
-  public async addGroup(targetId: StoreTargetId, parentGroupId?: string): Promise<void> {
-    const parent = parentGroupId ? this.findGroupById(this.state.readTargetStore(targetId).groups, parentGroupId) : undefined;
-    const name = await vscode.window.showInputBox({
-      prompt: parent ? `Subgroup name in "${parent.name}"` : "Group name",
-      placeHolder: "e.g. Backend"
-    });
-    if (!name?.trim()) {
+  public async toggleDone(listId: ListId, todoId: TodoId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (list) => {
+        const todo = this.findTodo(list.store, todoId);
+        if (todo) {
+          todo.done = !todo.done;
+          todo.completedAt = todo.done ? Date.now() : undefined;
+        }
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
       return;
     }
 
-    const store = this.state.readTargetStore(targetId);
-    const target = parentGroupId ? this.findGroupById(store.groups, parentGroupId) : undefined;
-    const newGroup: TodoGroup = {
-      id: this.newId(),
-      name: name.trim(),
-      groups: [],
-      todos: []
-    };
-
-    if (target) {
-      target.groups.push(newGroup);
-    } else {
-      store.groups.push(newGroup);
-    }
-
-    await this.state.writeTargetStore(targetId, store);
+    await this.state.updateList(listId, (list) => {
+      const todo = this.findTodo(list.store, todoId);
+      if (todo) {
+        todo.done = !todo.done;
+        todo.completedAt = todo.done ? Date.now() : undefined;
+      }
+    });
     await this.refresh();
   }
 
-  public async addTodo(targetId: StoreTargetId, groupId?: string): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    let group: TodoGroup | undefined;
-
-    if (groupId) {
-      group = this.findGroupById(store.groups, groupId);
-    } else {
-      const candidates = this.flattenGroups(store.groups);
-      if (candidates.length === 0) {
-        vscode.window.showInformationMessage("Create a group first.");
+  public async deleteTodo(listId: ListId, todoId: TodoId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
         return;
       }
+      await storageManager.saveSharedList(record.id, (list) => {
+        this.removeTodo(list.store, todoId);
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
 
-      const picked = await vscode.window.showQuickPick(
-        candidates.map((g) => ({ label: g.name, description: g.id })),
-        { title: "Select group for TODO" }
+    await this.state.updateList(listId, (list) => {
+      this.removeTodo(list.store, todoId);
+    });
+    await this.refresh();
+  }
+
+  public async deleteGroup(listId: ListId, groupId: GroupId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (list) => {
+        this.removeGroup(list.store.groups, groupId);
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    await this.state.updateList(listId, (list) => {
+      this.removeGroup(list.store.groups, groupId);
+    });
+    await this.refresh();
+  }
+
+  public async deleteList(listId: ListId, source: ListSource = "local"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const picked = await vscode.window.showWarningMessage(
+        `Shared list "${record.listName}" is backed by a GitHub repository. Remove only this local copy to hide it from this workspace, or delete the remote JSON to remove it for everyone with access.`,
+        { modal: true },
+        "Delete local copy",
+        "Delete remote list",
+        "Cancel"
       );
-      if (!picked?.description) {
+
+      if (picked === "Delete local copy") {
+        await storageManager.deleteSharedList(record.id);
+        await this.reloadSharedLists();
+        await this.refresh();
         return;
       }
-      group = this.findGroupById(store.groups, picked.description);
-    }
 
-    if (!group) {
-      return;
-    }
-
-    const text = await vscode.window.showInputBox({
-      prompt: `TODO text in "${group.name}"`,
-      placeHolder: "e.g. Add API validation"
-    });
-    if (!text?.trim()) {
-      return;
-    }
-
-    group.todos.push({
-      id: this.newId(),
-      text: text.trim(),
-      done: false,
-      createdAt: Date.now()
-    });
-
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async toggleDone(targetId: StoreTargetId, todoId: string): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    const todoRef = this.findTodoRef(store.groups, todoId);
-    if (!todoRef) {
-      return;
-    }
-
-    todoRef.todo.done = !todoRef.todo.done;
-    todoRef.todo.completedAt = todoRef.todo.done ? Date.now() : undefined;
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async deleteGroup(targetId: StoreTargetId, groupId: string): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    const removed = this.deleteGroupById(store.groups, groupId);
-    if (!removed) {
-      return;
-    }
-
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async deleteTodo(targetId: StoreTargetId, todoId: string): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    const removed = this.deleteTodoById(store.groups, todoId);
-    if (!removed) {
-      return;
-    }
-
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async setGroupExpansion(targetId: StoreTargetId, expandGroups: boolean): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    store.expandGroups = expandGroups;
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async setExpandAll(expand: boolean): Promise<void> {
-    const ws = this.state.readStore("workspace");
-    ws.expandGroups = expand;
-    await this.state.writeStore("workspace", ws);
-
-    const profile = this.state.readStore("profile");
-    profile.expandGroups = expand;
-    await this.state.writeStore("profile", profile);
-
-    await this.refresh();
-  }
-
-  public async toggleHideCompleted(targetId: StoreTargetId): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    store.hideCompleted = !store.hideCompleted;
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async toggleSectionCollapsed(targetId: StoreTargetId): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    store.sectionCollapsed = !store.sectionCollapsed;
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async toggleGroupCardCollapsed(targetId: StoreTargetId, groupId: string): Promise<void> {
-    const store = this.state.readTargetStore(targetId);
-    if (store.collapsedGroupIds.includes(groupId)) {
-      store.collapsedGroupIds = store.collapsedGroupIds.filter((id) => id !== groupId);
-    } else {
-      store.collapsedGroupIds = [...store.collapsedGroupIds, groupId];
-    }
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
-  }
-
-  public async setViewMode(viewMode: ViewMode): Promise<void> {
-    if (this.state.readViewMode() === viewMode) {
-      return;
-    }
-    await this.state.setViewMode(viewMode);
-    await this.refresh();
-  }
-
-  public async createWorkspaceLink(): Promise<void> {
-    const name = await vscode.window.showInputBox({
-      prompt: "Shared project name",
-      placeHolder: "e.g. CRM Backend"
-    });
-    if (!name?.trim()) {
-      return;
-    }
-    await this.state.createWorkspaceScope(name);
-    await this.refresh();
-  }
-
-  public async linkWorkspaceToExistingScope(): Promise<void> {
-    const scopes = this.state.listWorkspaceScopes();
-    if (scopes.length === 0) {
-      vscode.window.showInformationMessage("No shared workspace projects exist yet.");
-      return;
-    }
-
-    const picked = await vscode.window.showQuickPick(
-      scopes.map((scope) => ({ label: scope.name, description: scope.id })),
-      { title: "Link workspace to shared project" }
-    );
-    if (!picked?.description) {
-      return;
-    }
-
-    await this.state.linkWorkspaceToScope(picked.description);
-    await this.refresh();
-  }
-
-  public async unlinkWorkspaceScope(): Promise<void> {
-    await this.state.unlinkWorkspaceScope();
-    await this.refresh();
-  }
-
-  public async exportAll(): Promise<void> {
-    const entries: ExportEntry[] = this.state.listTargets().map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      store: this.state.readTargetStore(target.id)
-    }));
-    await this.writeExportFile(entries, "todo-list-pro-all.json");
-  }
-
-  public async exportTarget(targetId: StoreTargetId): Promise<void> {
-    const target = this.state.listTargets().find((item) => item.id === targetId);
-    const entries: ExportEntry[] = [
-      {
-        targetId,
-        label: target?.label ?? targetId,
-        store: this.state.readTargetStore(targetId)
+      if (picked !== "Delete remote list") {
+        return;
       }
-    ];
-    await this.writeExportFile(entries, `todo-list-pro-${this.slugify(target?.label ?? targetId)}.json`);
+
+      const confirmRemote = await vscode.window.showWarningMessage(
+        `This will permanently delete "${record.listName}" from GitHub repository ${record.target.owner}/${record.target.repo} on branch ${record.target.branch}. Continue?`,
+        { modal: true },
+        "Delete remote list",
+        "Cancel"
+      );
+      if (confirmRemote !== "Delete remote list") {
+        return;
+      }
+
+      await storageManager.deleteRemoteSharedList(record.id);
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    if (!list) {
+      return;
+    }
+    const confirm = await vscode.window.showWarningMessage(`Delete list "${list.name}"?`, { modal: true }, "Delete");
+    if (confirm !== "Delete") {
+      return;
+    }
+    await this.state.deleteList(listId);
+    await this.state.ensureExpandedListIsValid();
+    await this.refresh();
   }
 
-  public async importData(targetId?: StoreTargetId): Promise<void> {
-    const [source] =
-      (await vscode.window.showOpenDialog({
-        canSelectMany: false,
-        filters: { JSON: ["json"] },
-        openLabel: "Import TODO data"
-      })) ?? [];
-    if (!source) {
+  public async toggleListExpanded(listId: ListId): Promise<void> {
+    await this.state.setExpandedListId(this.state.readExpandedListId() === listId ? undefined : listId);
+    await this.refresh();
+  }
+
+  public async toggleListVisibility(listId: ListId): Promise<void> {
+    await this.state.toggleListVisibility(listId);
+    await this.refresh();
+  }
+
+  public async setCompletedRetentionDays(days: number): Promise<void> {
+    await this.state.setCompletedRetentionDays(days);
+    await this.refresh();
+  }
+
+  private getSharedRecord(recordId: string): SharedListRecord | undefined {
+    return this.sharedListsCache.find((record) => record.id === recordId);
+  }
+
+  private async reloadSharedLists(): Promise<void> {
+    this.sharedListsCache = await storageManager.listSharedLists();
+    this.updateAutoRefreshTimer();
+  }
+
+  private updateAutoRefreshTimer(): void {
+    if (this.autoRefreshTimer) {
+      clearInterval(this.autoRefreshTimer);
+      this.autoRefreshTimer = undefined;
+    }
+
+    if (!this.autoRefreshEnabled || this.sharedListsCache.length === 0) {
+      return;
+    }
+
+    this.autoRefreshTimer = setInterval(() => {
+      void this.refresh();
+    }, this.autoRefreshIntervalMs);
+  }
+
+  private async pickLocalList(listId?: ListId): Promise<TodoList | undefined> {
+    await this.state.ensureInitialized();
+    const lists = this.state.listLists();
+    if (lists.length === 0) {
+      void vscode.window.showInformationMessage("Create a list first.");
+      return undefined;
+    }
+    if (listId) {
+      const pickedList = lists.find((list) => list.id === listId);
+      if (pickedList) {
+        return pickedList;
+      }
+    }
+    const picked = await vscode.window.showQuickPick(
+      lists.map((list) => ({ label: list.name, description: `${list.store.groups.length} groups`, list })),
+      { title: "Select local list" }
+    );
+    return picked?.list;
+  }
+
+  private async pickSharedList(): Promise<SharedListRecord | undefined> {
+    if (this.sharedListsCache.length === 0) {
+      void vscode.window.showInformationMessage("Add a shared list first.");
+      return undefined;
+    }
+    const picked = await vscode.window.showQuickPick(
+      this.sharedListsCache.map((record) => ({
+        label: record.listName,
+        description: `${record.target.owner}/${record.target.repo}#${record.target.branch}`,
+        record
+      })),
+      { title: "Select shared list" }
+    );
+    return picked?.record;
+  }
+
+  public async configureWorkspaceVisibility(): Promise<void> {
+    const lists = this.state.listLists();
+    if (lists.length === 0) {
+      void vscode.window.showInformationMessage("Create a list first.");
+      return;
+    }
+
+    const visibleIds = new Set(this.state.readVisibleListIds());
+    const picked = await vscode.window.showQuickPick(
+      lists.map((list) => ({
+        label: list.name,
+        picked: visibleIds.has(list.id),
+        description: `${list.store.groups.length} folders | ${this.countVisibleTodos(list.store, "")} tasks`,
+        listId: list.id
+      })),
+      {
+        title: "Workspace Visibility",
+        canPickMany: true,
+        placeHolder: "Select lists visible in the current workspace"
+      }
+    );
+
+    if (!picked) {
+      return;
+    }
+
+    const selectedIds = new Set(picked.map((item) => item.listId));
+    for (const list of lists) {
+      const isVisible = visibleIds.has(list.id);
+      const shouldBeVisible = selectedIds.has(list.id);
+      if (isVisible !== shouldBeVisible) {
+        await this.state.toggleListVisibility(list.id);
+      }
+    }
+
+    await this.state.ensureExpandedListIsValid();
+    await this.refresh();
+  }
+
+  public async configureCompletedRetention(): Promise<void> {
+    const current = this.state.getCompletedRetentionDays();
+    const picked = await vscode.window.showQuickPick(
+      [1, 3, 8, 14, 30, 90].map((days) => ({
+        label: `${days} day${days === 1 ? "" : "s"}`,
+        description: current === days ? "current" : undefined,
+        days
+      })),
+      {
+        title: "Completed Retention",
+        placeHolder: "Choose how long completed TODOs should be kept"
+      }
+    );
+
+    if (!picked) {
+      return;
+    }
+
+    await this.setCompletedRetentionDays(picked.days);
+  }
+
+  public async configureStorageMode(): Promise<void> {
+    const currentMode = storageManager.getStorageMode();
+    const picked = await vscode.window.showQuickPick(
+      [
+        {
+          label: currentMode === "local" ? "Keep local storage" : "Back to Local Mode",
+          description: currentMode === "local" ? "current" : "Switch back without deleting shared metadata or local data.",
+          mode: "local" as const
+        },
+        {
+          label: "Switch to Share Mode",
+          description: "Keeps local data untouched and enables shared list workflows.",
+          mode: "github-switch" as const
+        }
+      ],
+      {
+        title: "Storage Mode",
+        placeHolder: "Choose how TODO lists should be stored"
+      }
+    );
+
+    if (!picked) {
+      return;
+    }
+
+    if (picked.mode === "local") {
+      await storageManager.switchToLocal();
+      await this.refresh();
+      void vscode.window.showInformationMessage("Local storage is active. Existing local data was preserved.");
+      return;
+    }
+
+    if (picked.mode === "github-switch") {
+      try {
+        await storageManager.switchToShare();
+        await this.refresh();
+        void vscode.window.showInformationMessage("Share Mode is active. Local data was preserved.");
+      } catch (error) {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to initialize Share Mode.");
+      }
+      return;
+    }
+  }
+
+  public async shareCurrentList(listId?: ListId): Promise<void> {
+    const list = await this.pickLocalList(listId);
+    if (!list) {
       return;
     }
 
     try {
-      const bytes = await vscode.workspace.fs.readFile(source);
-      const parsed = JSON.parse(Buffer.from(bytes).toString("utf8")) as Partial<ExportPayload>;
-      const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+      const record = await storageManager.shareLocalList(list);
+      const target = record.target;
+      const shareKey = storageManager.createShareKey(target, record.listId, record.listName);
+      await vscode.env.clipboard.writeText(shareKey);
+      await this.reloadSharedLists();
+      await this.state.setExpandedListId(record.id);
+      await this.refresh();
+      void vscode.window.showInformationMessage(`Share key was copied to clipboard. Shared "${record.listName}" to ${target.owner}/${target.repo}.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to share list.");
+    }
+  }
 
-      if (parsed.version !== 1 || entries.length === 0) {
-        throw new Error("Invalid import format.");
-      }
-
-      if (targetId && entries.length === 1) {
-        await this.state.writeTargetStore(targetId, this.normalizeStore(entries[0].store));
+  public async openListInEditor(listId?: ListId, source: ListSource = "local"): Promise<void> {
+    const target = source === "shared" ? this.getSharedRecord(listId ?? "") : this.state.getList(listId ?? "");
+    if (!target) {
+      if (source === "shared") {
+        void vscode.window.showInformationMessage("Open a shared list first.");
       } else {
-        for (const entry of entries) {
-          const resolvedTargetId = await this.state.ensureImportTarget(entry.targetId, entry.label);
-          await this.state.writeTargetStore(resolvedTargetId, this.normalizeStore(entry.store));
+        void vscode.window.showInformationMessage("Select a local list first.");
+      }
+      return;
+    }
+
+    this.editorTarget = { listId: listId ?? target.id, source };
+    const title = source === "shared" ? `Shared: ${(target as SharedListRecord).listName}` : (target as TodoList).name;
+    const panel = vscode.window.createWebviewPanel(
+      "todoListProEditor",
+      title,
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")]
+      }
+    );
+    this.editorPanel = panel;
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")]
+    };
+    panel.webview.onDidReceiveMessage(async (message: WebviewAction) => {
+      await this.handleAction(message);
+    });
+    panel.onDidDispose(() => {
+      if (this.editorPanel === panel) {
+        this.editorPanel = undefined;
+        this.editorTarget = undefined;
+      }
+    });
+    panel.webview.html = this.renderEditorHtml();
+  }
+
+  public async copyShareKey(listId: ListId, source: ListSource = "shared"): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      const shareKey = storageManager.createShareKey(record.target, record.listId, record.listName);
+      await vscode.env.clipboard.writeText(shareKey);
+      void vscode.window.showInformationMessage(`Share key copied to clipboard for "${record.listName}".`);
+      return;
+    }
+
+    const list = this.state.getList(listId);
+    if (!list) {
+      return;
+    }
+    const record = this.sharedListsCache.find((item) => item.listId === list.id);
+    if (!record) {
+      void vscode.window.showInformationMessage("Share the list first to copy its share key.");
+      return;
+    }
+    const shareKey = storageManager.createShareKey(record.target, record.listId, record.listName);
+    await vscode.env.clipboard.writeText(shareKey);
+    void vscode.window.showInformationMessage(`Share key copied to clipboard for "${record.listName}".`);
+  }
+
+  public async copyLocalListToShareMode(): Promise<void> {
+    await this.shareCurrentList();
+  }
+
+  public async addSharedList(): Promise<void> {
+    const shareKey = await vscode.window.showInputBox({
+      prompt: "Paste share key",
+      placeHolder: "todo-share://..."
+    });
+    if (!shareKey?.trim()) {
+      return;
+    }
+
+    try {
+      const decoded = await storageManager.getSharedProvider().loadFromShareKey(shareKey.trim());
+      const localConflict = this.state.getList(decoded.listId);
+      if (localConflict) {
+        const picked = await vscode.window.showWarningMessage(
+          `A local list with the same id already exists: "${localConflict.name}". What do you want to do?`,
+          { modal: true },
+          "Open as shared list",
+          "Create local copy",
+          "Cancel"
+        );
+
+        if (picked === "Create local copy") {
+          const { snapshot } = await storageManager.getSharedProvider().loadSnapshot(decoded.target);
+          const created = await this.state.createList(`${snapshot.listName} (copy)`);
+          await this.state.updateList(created.id, (target) => {
+            target.store = this.cloneStore(snapshot.store);
+          });
+          await this.refresh();
+          void vscode.window.showInformationMessage(`Created local copy of "${snapshot.listName}".`);
+          return;
+        }
+
+        if (picked !== "Open as shared list") {
+          return;
         }
       }
 
+      const record = await storageManager.addSharedListFromShareKey(shareKey.trim());
+      await this.reloadSharedLists();
+      await this.state.setExpandedListId(record.id);
       await this.refresh();
-      void vscode.window.showInformationMessage(`Imported ${entries.length} list${entries.length === 1 ? "" : "s"}.`);
+      void vscode.window.showInformationMessage(`Loaded shared list "${record.listName}".`);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Import failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to add shared list.");
     }
   }
 
-  public async clearTarget(targetId: StoreTargetId): Promise<void> {
-    const target = this.state.listTargets().find((item) => item.id === targetId);
-    const confirmed = await vscode.window.showWarningMessage(
-      `Clear all groups and TODOs from "${target?.label ?? targetId}"?`,
-      { modal: true },
-      "Clear"
+  public async syncSharedList(recordId?: string): Promise<void> {
+    const record = recordId ? this.getSharedRecord(recordId) : await this.pickSharedList();
+    if (!record) {
+      return;
+    }
+    try {
+      await storageManager.syncSharedList(record.id);
+      await this.reloadSharedLists();
+      await this.refresh();
+      void vscode.window.showInformationMessage(`Synced shared list "${record.listName}".`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to sync shared list.");
+    }
+  }
+
+  public async toggleAutoRefreshSharedLists(): Promise<void> {
+    this.autoRefreshEnabled = !this.autoRefreshEnabled;
+    await vscode.workspace
+      .getConfiguration("todoListPro")
+      .update("autoRefreshSharedLists", this.autoRefreshEnabled, vscode.ConfigurationTarget.Global);
+    this.updateAutoRefreshTimer();
+    void vscode.window.showInformationMessage(
+      this.autoRefreshEnabled
+        ? "Automatic refresh enabled. Shared lists will refresh every 5 minutes when present."
+        : "Automatic refresh disabled."
     );
-    if (confirmed !== "Clear") {
-      return;
-    }
-
-    const store = this.state.readTargetStore(targetId);
-    store.groups = [];
-    store.collapsedGroupIds = [];
-    await this.state.writeTargetStore(targetId, store);
-    await this.refresh();
   }
 
-  public async deleteTarget(targetId: StoreTargetId): Promise<void> {
-    const target = this.state.listTargets().find((item) => item.id === targetId);
-    if (!target) {
-      return;
-    }
-
-    if (!targetId.startsWith("scope:")) {
-      await this.clearTarget(targetId);
-      return;
-    }
-
-    const confirmed = await vscode.window.showWarningMessage(
-      `Delete list "${target.label}" completely?`,
-      { modal: true },
-      "Delete"
-    );
-    if (confirmed !== "Delete") {
-      return;
-    }
-
-    const removed = await this.state.deleteTarget(targetId);
-    if (!removed) {
-      return;
-    }
-
-    if (this.state.readSelectedTarget() === targetId) {
-      await this.state.setSelectedTarget("workspace");
-    }
-
-    await this.refresh();
+  public async exportAll(): Promise<void> {
+    await this.writeExportFile(this.state.listLists(), "todo-lists-export.json");
   }
 
-  public async moveTargetToGroup(sourceTargetId: StoreTargetId, targetId: StoreTargetId, groupId: string): Promise<void> {
-    if (sourceTargetId === targetId) {
-      void vscode.window.showInformationMessage("Move between different lists only.");
+  public async exportList(listId: ListId): Promise<void> {
+    const list = this.state.getList(listId);
+    if (list) {
+      await this.writeExportFile([list], `${this.slugify(list.name)}.json`);
+    }
+  }
+
+  public async exportSingleList(): Promise<void> {
+    const lists = this.state.listLists();
+    if (lists.length === 0) {
+      void vscode.window.showInformationMessage("Create a list first.");
       return;
     }
 
-    const sourceTarget = this.state.listTargets().find((item) => item.id === sourceTargetId);
-    if (!sourceTarget) {
-      return;
-    }
-
-    const sourceStore = this.state.readTargetStore(sourceTargetId);
-    if (sourceStore.groups.length === 0) {
-      void vscode.window.showInformationMessage(`List "${sourceTarget.label}" is empty.`);
-      return;
-    }
-
-    const targetStore = this.state.readTargetStore(targetId);
-    const targetGroup = this.findGroupById(targetStore.groups, groupId);
-    if (!targetGroup) {
-      return;
-    }
-
-    const movedGroup: TodoGroup = {
-      id: this.newId(),
-      name: sourceTarget.label,
-      groups: sourceStore.groups,
-      todos: []
-    };
-
-    targetGroup.groups.push(movedGroup);
-    await this.state.writeTargetStore(targetId, targetStore);
-
-    if (sourceTargetId.startsWith("scope:")) {
-      await this.state.deleteTarget(sourceTargetId);
-      if (this.state.readSelectedTarget() === sourceTargetId) {
-        await this.state.setSelectedTarget(targetId);
+    const picked = await vscode.window.showQuickPick(
+      lists.map((list) => ({
+        label: list.name,
+        description: `${list.store.groups.length} folders | ${this.countVisibleTodos(list.store, "")} tasks`,
+        listId: list.id
+      })),
+      {
+        title: "Export Single List",
+        placeHolder: "Select a list to export"
       }
-    } else {
-      const emptiedSource = this.state.readTargetStore(sourceTargetId);
-      emptiedSource.groups = [];
-      emptiedSource.collapsedGroupIds = [];
-      await this.state.writeTargetStore(sourceTargetId, emptiedSource);
+    );
+
+    if (!picked) {
+      return;
     }
 
+    await this.exportList(picked.listId);
+  }
+
+  public async importData(): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectMany: false,
+      openLabel: "Import TODO lists",
+      filters: { JSON: ["json"] }
+    });
+    const file = picked?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const content = await vscode.workspace.fs.readFile(file);
+      const raw = JSON.parse(Buffer.from(content).toString("utf8"));
+      const imported = this.normalizeImportedLists(raw);
+      if (imported.length === 0) {
+        throw new Error("The selected file does not contain any importable lists.");
+      }
+
+      for (const list of imported) {
+        const created = await this.state.createList(list.name);
+        await this.state.updateList(created.id, (target) => {
+          target.store = this.cloneStore(list.store);
+        });
+      }
+
+      await this.state.ensureExpandedListIsValid();
+      await this.refresh();
+      void vscode.window.showInformationMessage(`Imported ${imported.length} list${imported.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to import TODO data.";
+      void vscode.window.showErrorMessage(message);
+    }
+  }
+
+  public async moveTodo(
+    sourceListId: ListId,
+    todoId: TodoId,
+    targetListId: ListId,
+    targetGroupId?: GroupId,
+    source: ListSource = "local"
+  ): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(sourceListId);
+      const target = this.getSharedRecord(targetListId);
+      if (!record || !target || record.id !== target.id) {
+        void vscode.window.showWarningMessage("Shared items can only be moved within the same shared list.");
+        return;
+      }
+      const nextStore = this.cloneStore(record.snapshot.store);
+      const todo = this.removeTodo(nextStore, todoId);
+      if (!todo) {
+        return;
+      }
+      if (!this.insertTodo(nextStore, todo, targetGroupId)) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (list) => {
+        list.store = nextStore;
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const sourceList = this.state.getList(sourceListId);
+    const targetList = this.state.getList(targetListId);
+    if (!sourceList || !targetList) {
+      return;
+    }
+
+    const nextSource = this.cloneStore(sourceList.store);
+    const todo = this.removeTodo(nextSource, todoId);
+    if (!todo) {
+      return;
+    }
+
+    if (sourceListId === targetListId) {
+      if (!this.insertTodo(nextSource, todo, targetGroupId)) {
+        return;
+      }
+      await this.state.updateList(sourceListId, (list) => {
+        list.store = nextSource;
+      });
+    } else {
+      const nextTarget = this.cloneStore(targetList.store);
+      if (!this.insertTodo(nextTarget, todo, targetGroupId)) {
+        return;
+      }
+      await this.state.updateList(sourceListId, (list) => {
+        list.store = nextSource;
+      });
+      await this.state.updateList(targetListId, (list) => {
+        list.store = nextTarget;
+      });
+    }
+
+    await this.state.ensureListVisible(targetListId);
+    await this.state.setExpandedListId(targetListId);
     await this.refresh();
   }
 
-  public async toggleShellSection(shellId: "main" | "lists" | "viewList" | "transfer"): Promise<void> {
-    const shellState = this.state.readShellState();
-    shellState[shellId] = !shellState[shellId];
-    await this.state.setShellState(shellState);
+  public async moveGroup(
+    sourceListId: ListId,
+    groupId: GroupId,
+    targetListId: ListId,
+    targetGroupId?: GroupId,
+    source: ListSource = "local"
+  ): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(sourceListId);
+      const target = this.getSharedRecord(targetListId);
+      if (!record || !target || record.id !== target.id) {
+        void vscode.window.showWarningMessage("Shared folders can only be moved within the same shared list.");
+        return;
+      }
+      const nextGroups = this.cloneStore(record.snapshot.store).groups;
+      const group = this.removeGroup(nextGroups, groupId);
+      if (!group) {
+        return;
+      }
+      if (this.containsGroup(group, targetGroupId) || group.id === targetGroupId) {
+        void vscode.window.showWarningMessage("A group cannot be moved into itself or its descendant.");
+        return;
+      }
+      if (!this.insertGroup(nextGroups, group, targetGroupId)) {
+        return;
+      }
+      await storageManager.saveSharedList(record.id, (list) => {
+        list.store.groups = nextGroups;
+      });
+      await this.reloadSharedLists();
+      await this.refresh();
+      return;
+    }
+
+    const sourceList = this.state.getList(sourceListId);
+    const targetList = this.state.getList(targetListId);
+    if (!sourceList || !targetList) {
+      return;
+    }
+
+    const nextSource = this.cloneStore(sourceList.store);
+    const group = this.removeGroup(nextSource.groups, groupId);
+    if (!group) {
+      return;
+    }
+    if (this.containsGroup(group, targetGroupId) || group.id === targetGroupId) {
+      void vscode.window.showWarningMessage("A group cannot be moved into itself or its descendant.");
+      return;
+    }
+
+    if (sourceListId === targetListId) {
+      if (!this.insertGroup(nextSource.groups, group, targetGroupId)) {
+        return;
+      }
+      await this.state.updateList(sourceListId, (list) => {
+        list.store = nextSource;
+      });
+    } else {
+      const nextTarget = this.cloneStore(targetList.store);
+      if (!this.insertGroup(nextTarget.groups, group, targetGroupId)) {
+        return;
+      }
+      await this.state.updateList(sourceListId, (list) => {
+        list.store = nextSource;
+      });
+      await this.state.updateList(targetListId, (list) => {
+        list.store = nextTarget;
+      });
+    }
+
+    await this.state.ensureListVisible(targetListId);
+    await this.state.setExpandedListId(targetListId);
     await this.refresh();
   }
 
   private async handleAction(action: WebviewAction): Promise<void> {
-    const targetId = "targetId" in action && action.targetId ? action.targetId : ("mode" in action ? action.mode : undefined);
-
     switch (action.type) {
       case "setFilter":
         await this.setFilter(action.value);
@@ -806,1101 +1407,200 @@ class TodoController implements vscode.WebviewViewProvider {
       case "clearFilter":
         await this.clearFilter();
         return;
-      case "addRootGroup":
-        if (targetId) {
-          await this.addGroup(targetId);
-        }
-        return;
-      case "addSubgroup":
-        if (targetId) {
-          await this.addGroup(targetId, action.groupId);
-        }
-        return;
-      case "addTodo":
-        if (targetId) {
-          await this.addTodo(targetId, action.groupId);
-        }
-        return;
-      case "toggleDone":
-        if (targetId) {
-          await this.toggleDone(targetId, action.todoId);
-        }
-        return;
-      case "deleteGroup":
-        if (targetId) {
-          await this.deleteGroup(targetId, action.groupId);
-        }
-        return;
-      case "deleteTodo":
-        if (targetId) {
-          await this.deleteTodo(targetId, action.todoId);
-        }
-        return;
-      case "setExpandAll":
-        await this.setExpandAll(true);
-        return;
-      case "setCollapseAll":
-        await this.setExpandAll(false);
-        return;
-      case "setSectionExpand":
-        if (targetId) {
-          await this.setGroupExpansion(targetId, action.expand);
-        }
-        return;
-      case "toggleSectionCollapsed":
-        if (targetId) {
-          await this.toggleSectionCollapsed(targetId);
-        }
-        return;
-      case "toggleGroupCardCollapsed":
-        if (targetId) {
-          await this.toggleGroupCardCollapsed(targetId, action.groupId);
-        }
-        return;
-      case "toggleHideCompleted":
-        if (targetId) {
-          await this.toggleHideCompleted(targetId);
-        }
-        return;
-      case "setViewMode":
-        await this.setViewMode(action.viewMode);
-        return;
-      case "selectTarget":
-        await this.state.setSelectedTarget(action.targetId);
-        await this.state.setShellState({
-          ...this.state.readShellState(),
-          viewList: true
-        });
+      case "toggleShellSection": {
+        const shellState = this.state.readShellState();
+        shellState[action.shellId] = !shellState[action.shellId];
+        await this.state.setShellState(shellState);
         await this.refresh();
         return;
-      case "toggleShellSection":
-        await this.toggleShellSection(action.shellId);
+      }
+      case "toggleListExpanded":
+        await this.toggleListExpanded(action.listId);
+        return;
+      case "addList":
+        await this.addList();
+        return;
+      case "addGroup":
+        await this.addGroup(action.listId, action.groupId, action.source ?? "local");
+        return;
+      case "addTodo":
+        await this.addTodo(action.listId, action.groupId, action.source ?? "local");
+        return;
+      case "quickAddTodo":
+        await this.quickAddTodo(action.listId, action.text, action.groupId, action.source ?? "local");
+        return;
+      case "renameList":
+        await this.renameList(action.listId, action.source ?? "local");
+        return;
+      case "renameGroup":
+        await this.renameGroup(action.listId, action.groupId, action.source ?? "local");
+        return;
+      case "renameTodo":
+        await this.renameTodo(action.listId, action.todoId, action.source ?? "local");
+        return;
+      case "toggleDone":
+        await this.toggleDone(action.listId, action.todoId, action.source ?? "local");
+        return;
+      case "deleteTodo":
+        await this.deleteTodo(action.listId, action.todoId, action.source ?? "local");
+        return;
+      case "deleteGroup":
+        await this.deleteGroup(action.listId, action.groupId, action.source ?? "local");
+        return;
+      case "deleteList":
+        await this.deleteList(action.listId, action.source ?? "local");
         return;
       case "exportAll":
         await this.exportAll();
         return;
-      case "exportTarget":
-        await this.exportTarget(action.targetId);
+      case "exportList":
+        await this.exportList(action.listId);
         return;
       case "importData":
-        await this.importData(action.targetId);
+        await this.importData();
         return;
-      case "clearTarget":
-        await this.clearTarget(action.targetId);
+      case "moveTodo":
+        await this.moveTodo(action.sourceListId, action.todoId, action.targetListId, action.targetGroupId, action.source ?? "local");
         return;
-      case "deleteTarget":
-        await this.deleteTarget(action.targetId);
+      case "moveGroup":
+        await this.moveGroup(action.sourceListId, action.groupId, action.targetListId, action.targetGroupId, action.source ?? "local");
         return;
-      case "moveTargetToGroup":
-        await this.moveTargetToGroup(action.sourceTargetId, action.targetId, action.groupId);
+      case "shareCurrentList":
+        await this.shareCurrentList(action.listId);
         return;
-      case "createWorkspaceLink":
-        await this.createWorkspaceLink();
+      case "openListInEditor":
+        await this.openListInEditor(action.listId, action.source ?? "local");
         return;
-      case "linkWorkspaceToScope":
-        await this.linkWorkspaceToExistingScope();
+      case "copyShareKey":
+        await this.copyShareKey(action.listId, action.source ?? "shared");
         return;
-      case "unlinkWorkspaceScope":
-        await this.unlinkWorkspaceScope();
+      case "addSharedList":
+        await this.addSharedList();
         return;
-      default:
+      case "copyLocalListToShareMode":
+        await this.copyLocalListToShareMode();
+        return;
+      case "syncSharedList":
+        await this.syncSharedList(action.listId);
+        return;
+      case "refresh":
         await this.refresh();
+        return;
     }
   }
 
   private renderHtml(): string {
-    const filterValue = this.state.readFilter();
-    const filter = filterValue.toLowerCase();
-    const viewMode = this.state.readViewMode();
-    const workspaceStore = this.state.readStore("workspace");
-    const profileStore = this.state.readStore("profile");
-    const workspaceScope = this.state.getWorkspaceScope();
-    const targets = this.state.listTargets();
-    const selectedTargetId = this.state.readSelectedTarget();
-    const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? targets[0];
+    return this.renderHtmlForMode(undefined);
+  }
+
+  private renderEditorHtml(): string {
+    return this.renderHtmlForMode(this.editorTarget);
+  }
+
+  private renderHtmlForMode(target?: { listId: ListId; source: ListSource }): string {
+    const codiconCssUri = this.view?.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicons", "codicon.css"))
+      ?? this.editorPanel?.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicons", "codicon.css"))
+      ?? "";
+    const filter = this.state.readFilter();
     const shellState = this.state.readShellState();
+    const visibleIds = new Set(this.state.readVisibleListIds());
+    const allLists = this.buildRenderableLists();
+    const renderedLists = target
+      ? allLists.filter((list) => list.displayId === target.listId && list.source === target.source)
+      : allLists.filter((list) => list.source === "shared" || visibleIds.has(list.id));
+    const expandedListId = target ? target.listId : this.state.readExpandedListId();
 
-    const workspaceHtml =
-      viewMode === "workspace"
-        ? this.renderWorkspaceBlocks(workspaceStore, filter)
-        : this.renderSection("workspace", "Workspace", workspaceStore, filter);
-    const profileHtml = viewMode === "workspace" ? "" : this.renderSection("profile", "Profile", profileStore, filter);
-    const mainContent = `${workspaceHtml.replace("__WORKSPACE_SCOPE_META__", this.escapeHtml(workspaceScope ? `linked: ${workspaceScope.name}` : "local workspace"))}${profileHtml}`;
-    const listsContent = this.renderTargetBrowser(targets, selectedTarget?.id ?? "workspace");
-    const viewListContent = selectedTarget ? this.renderSelectedTargetView(selectedTarget.id, selectedTarget.label, filter) : '<div class="empty">No list selected.</div>';
-    const transferContent = this.renderTransferSection(selectedTarget);
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="stylesheet" href="${codiconCssUri}" />
 <style>
-:root {
-  color-scheme: light dark;
-}
-body {
-  margin: 0;
-  padding: 8px;
-  color: var(--vscode-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: 14px;
-}
-.toolbar {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.input {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 40px;
-  border: 1px solid var(--vscode-input-border);
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  padding: 7px 10px;
-  font-size: 14px;
-  border-radius: 6px;
-  outline: none;
-}
-.input:focus {
-  border-color: var(--vscode-focusBorder);
-}
-.btn {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--vscode-foreground);
-  border-radius: 6px;
-  padding: 5px 7px;
-  cursor: pointer;
-}
-.btn svg,
-.icon-btn svg,
-.section-btn svg,
-.section-folder svg,
-.item-icon svg,
-.item-action svg,
-.section-caret svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.section-btn svg,
-.item-action svg {
-  width: 18px;
-  height: 18px;
-}
-.btn:hover,
-.section-btn:hover,
-.icon-btn:hover {
-  background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
-}
-.menu-wrap {
-  margin-left: auto;
-  position: relative;
-}
-.menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  min-width: 250px;
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, black 12%);
-  border-radius: 8px;
-  padding: 6px 0;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
-  z-index: 30;
-  display: none;
-}
-.menu.open {
-  display: block;
-}
-.menu button {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--vscode-foreground);
-  border-radius: 0;
-  padding: 9px 12px;
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-}
-.menu button:hover {
-  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 80%, transparent);
-}
-.menu button.is-active {
-  font-weight: 700;
-}
-.menu-check {
-  width: 16px;
-  display: inline-flex;
-  justify-content: center;
-  color: var(--vscode-terminal-ansiGreen);
-  flex: 0 0 16px;
-}
-.menu-check svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.menu-label {
-  flex: 1;
-  text-align: left;
-}
-.menu-separator {
-  height: 1px;
-  margin: 4px 0;
-  background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
-}
-.shell {
-  display: grid;
-  gap: 0;
-}
-.shell-block {
-  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
-}
-.shell-block:last-child {
-  border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
-}
-.shell-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 10px;
-  background: transparent;
-  border: 0;
-  color: var(--vscode-foreground);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.shell-header:hover {
-  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 72%, transparent);
-}
-.shell-caret {
-  display: inline-flex;
-  transition: transform 120ms ease;
-  transform: rotate(90deg);
-}
-.shell-caret.is-collapsed {
-  transform: rotate(0deg);
-}
-.shell-body {
-  padding: 8px;
-}
-.shell-block.is-collapsed .shell-body {
-  display: none;
-}
-.target-list {
-  display: grid;
-  gap: 6px;
-}
-.target-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
-  background: color-mix(in srgb, var(--vscode-editor-background) 96%, black 4%);
-  color: var(--vscode-foreground);
-  border-radius: 8px;
-  padding: 8px 10px;
-  position: relative;
-}
-.target-item-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  cursor: pointer;
-}
-.target-item.is-active {
-  border-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 55%, transparent);
-  background: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 14%, transparent);
-}
-.target-item:hover,
-.target-item-main:hover {
-  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 70%, transparent);
-}
-.target-item-title {
-  font-size: 14px;
-}
-.target-item-meta {
-  margin-left: auto;
-  opacity: 0.72;
-  font-size: 12px;
-}
-.target-item-actions {
-  display: inline-flex;
-  gap: 4px;
-  margin-left: 8px;
-  opacity: 0;
-  pointer-events: none;
-}
-.target-item:hover .target-item-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-.drop-highlight {
-  outline: 1px solid color-mix(in srgb, var(--vscode-terminal-ansiGreen) 70%, transparent);
-  outline-offset: 2px;
-  background: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 12%, transparent);
-}
-.workspace-grid {
-  display: grid;
-  gap: 10px;
-}
-.workspace-card {
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
-  border-radius: 10px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--vscode-sideBar-background) 86%, black 14%), transparent 70%),
-    color-mix(in srgb, var(--vscode-editor-background) 94%, black 6%);
-  overflow: hidden;
-}
-.workspace-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
-  cursor: pointer;
-}
-.workspace-card-title {
-  font-size: 15px;
-  font-weight: 600;
-}
-.workspace-card-body {
-  padding: 10px 12px;
-}
-.workspace-card.is-collapsed .workspace-card-body {
-  display: none;
-}
-.workspace-card-caret {
-  display: inline-flex;
-  transition: transform 120ms ease;
-  transform: rotate(90deg);
-}
-.workspace-card.is-collapsed .workspace-card-caret {
-  transform: rotate(0deg);
-}
-.section {
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
-  border-radius: 8px;
-  margin-bottom: 10px;
-  overflow: hidden;
-}
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 90%, black 10%);
-  border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
-  cursor: pointer;
-}
-.section-folder {
-  color: var(--vscode-symbolIcon-folderForeground);
-  display: inline-flex;
-}
-.section-caret {
-  display: inline-flex;
-  transition: transform 120ms ease;
-  transform: rotate(90deg);
-}
-.section-caret.is-collapsed {
-  transform: rotate(0deg);
-}
-.section-title {
-  font-size: 15px;
-  font-weight: 600;
-}
-.section-meta {
-  margin-left: 6px;
-  font-size: 12px;
-  opacity: 0.8;
-}
-.section-actions {
-  margin-left: auto;
-  display: inline-flex;
-  gap: 4px;
-}
-.section-btn,
-.icon-btn {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--vscode-foreground);
-  border-radius: 6px;
-  padding: 3px 5px;
-  cursor: pointer;
-}
-.section-body {
-  padding: 8px;
-}
-.section.is-collapsed .section-body {
-  display: none;
-}
-.group {
-  border-left: 1px solid color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
-  margin-left: 4px;
-  padding-left: 8px;
-}
-.group summary {
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-}
-.group summary::-webkit-details-marker {
-  display: none;
-}
-.group-name {
-  font-size: 15px;
-  font-weight: 600;
-}
-.group-folder {
-  display: inline-flex;
-  color: var(--vscode-symbolIcon-folderForeground);
-}
-.item-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-.item-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.item-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 8px;
-  opacity: 0;
-  pointer-events: none;
-}
-.caret {
-  display: inline-flex;
-  transition: transform 120ms ease;
-}
-.group[open] .caret {
-  transform: rotate(90deg);
-}
-.item-action {
-  border: 1px solid transparent;
-  background: transparent;
-  color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 92%, white 8%);
-  border-radius: 5px;
-  padding: 2px;
-  cursor: pointer;
-}
-.item-action[data-action="deleteGroup"],
-.item-action[data-action="deleteTodo"] {
-  color: color-mix(in srgb, var(--vscode-errorForeground) 92%, white 8%);
-}
-.item-action:hover {
-  background: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 20%, transparent);
-  color: var(--vscode-terminal-ansiGreen);
-}
-.item-action[data-action="deleteGroup"]:hover,
-.item-action[data-action="deleteTodo"]:hover {
-  background: color-mix(in srgb, var(--vscode-errorForeground) 18%, transparent);
-  color: var(--vscode-errorForeground);
-}
-.workspace-card-header:hover .item-actions,
-.group summary:hover .item-actions,
-.todo-row:hover .item-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-.todo-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0 3px 2px;
-  font-size: 15px;
-}
-.todo-text {
-  font-weight: 400;
-}
-.todo-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-.todo-check {
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--vscode-foreground);
-  border-radius: 4px;
-  background: transparent;
-  cursor: pointer;
-  position: relative;
-  flex: 0 0 auto;
-}
-.todo-check.done {
-  background: var(--vscode-button-background);
-  border-color: var(--vscode-button-background);
-}
-.todo-check.done::after {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 1px;
-  width: 5px;
-  height: 9px;
-  border: solid var(--vscode-button-foreground);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-.todo-text.done {
-  text-decoration: line-through;
-  opacity: 0.65;
-}
-.empty {
-  opacity: 0.8;
-  padding: 6px 2px;
-}
-</style>
-</head>
-<body>
-  <div class="toolbar">
-    <input id="filterInput" class="input" placeholder="Filter todos..." value="${this.escapeHtml(filterValue)}" />
-    <div class="menu-wrap">
-      <button id="menuToggle" class="btn" title="More actions">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="13" cy="8" r="1.1" fill="currentColor" stroke="none"/></svg>
-      </button>
-      <div id="menu" class="menu">
-        <button data-action="clearFilter"><span class="menu-label">Clear filter</span><span class="menu-check"></span></button>
-        <div class="menu-separator"></div>
-        <button class="${viewMode === "all" ? "is-active" : ""}" data-action="setViewMode" data-view-mode="all"><span class="menu-label">Show all sections</span><span class="menu-check">${viewMode === "all" ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 2.6 2.6 6.4-6.6"/></svg>' : ""}</span></button>
-        <button class="${viewMode === "workspace" ? "is-active" : ""}" data-action="setViewMode" data-view-mode="workspace"><span class="menu-label">Show workspace only</span><span class="menu-check">${viewMode === "workspace" ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 2.6 2.6 6.4-6.6"/></svg>' : ""}</span></button>
-        <div class="menu-separator"></div>
-        <button data-action="createWorkspaceLink"><span class="menu-label">Create shared workspace project</span><span class="menu-check"></span></button>
-        <button data-action="linkWorkspaceToScope"><span class="menu-label">Link workspace to existing project</span><span class="menu-check"></span></button>
-        <button data-action="unlinkWorkspaceScope"><span class="menu-label">Unlink workspace project</span><span class="menu-check"></span></button>
-        <div class="menu-separator"></div>
-        <button data-action="setExpandAll"><span class="menu-label">Expand all groups</span><span class="menu-check"></span></button>
-        <button data-action="setCollapseAll"><span class="menu-label">Collapse all groups</span><span class="menu-check"></span></button>
-        <div class="menu-separator"></div>
-        <button data-action="refresh"><span class="menu-label">Refresh</span><span class="menu-check"></span></button>
-      </div>
-    </div>
-  </div>
-  <div class="shell">
-    <section class="shell-block ${shellState.main ? "" : "is-collapsed"}">
-      <button type="button" class="shell-header" data-action="toggleShellSection" data-shell-id="main"><span class="shell-caret ${shellState.main ? "" : "is-collapsed"}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span><span>TODO EXTENSION</span></button>
-      <div class="shell-body">${mainContent}</div>
-    </section>
-    <section class="shell-block ${shellState.lists ? "" : "is-collapsed"}">
-      <button type="button" class="shell-header" data-action="toggleShellSection" data-shell-id="lists"><span class="shell-caret ${shellState.lists ? "" : "is-collapsed"}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span><span>LISTS</span></button>
-      <div class="shell-body">${listsContent}</div>
-    </section>
-    <section class="shell-block ${shellState.viewList ? "" : "is-collapsed"}">
-      <button type="button" class="shell-header" data-action="toggleShellSection" data-shell-id="viewList"><span class="shell-caret ${shellState.viewList ? "" : "is-collapsed"}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span><span>VIEW LIST</span></button>
-      <div class="shell-body">${viewListContent}</div>
-    </section>
-    <section class="shell-block ${shellState.transfer ? "" : "is-collapsed"}">
-      <button type="button" class="shell-header" data-action="toggleShellSection" data-shell-id="transfer"><span class="shell-caret ${shellState.transfer ? "" : "is-collapsed"}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span><span>TRANSFER</span></button>
-      <div class="shell-body">${transferContent}</div>
-    </section>
-  </div>
+:root{--bg:var(--vscode-sideBar-background);--panel:var(--vscode-editorWidget-background,var(--vscode-sideBarSectionHeader-background,var(--vscode-sideBar-background)));--panel-2:var(--vscode-input-background);--border:var(--vscode-widget-border,var(--vscode-sideBar-border));--text:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--hover:var(--vscode-list-hoverBackground);--focus:var(--vscode-focusBorder);--button:var(--vscode-button-secondaryBackground);--buttonText:var(--vscode-button-secondaryForeground);--danger:var(--vscode-errorForeground,#f85149);--dangerBg:color-mix(in srgb,var(--danger) 14%, transparent);--shared:var(--vscode-charts-purple,#7c9cff)}
+ *{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:13px/1.4 var(--vscode-font-family)}body{padding:12px;min-width:230px}button,input{font:inherit;color:inherit}.app{display:flex;flex-direction:column;gap:12px}.toolbar{display:flex;align-items:flex-start;gap:8px}.filter{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px}.btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--border);background:var(--button);color:var(--buttonText);border-radius:8px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease}.btn:hover,.action:hover,.list-row:hover,.todo-row:hover,.group-summary:hover,.quick-add-row:hover{background:var(--hover)}.icon{display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;transition:transform .12s ease,color .12s ease,opacity .12s ease}.btn:hover .icon,.action:hover .icon{transform:scale(1.06)}.section{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel)}.section-header{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}.section.closed .section-body{display:none}.section-body{padding:10px}.title{font-weight:600}.meta{margin-left:auto;color:var(--muted);font-size:12px;flex:0 1 auto;white-space:nowrap;overflow:hidden}.stack{display:flex;flex-direction:column;gap:8px}.list-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel-2)}.list-card.shared{border-color:color-mix(in srgb,var(--shared) 40%, var(--border));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--shared) 18%, transparent)}.list-row{position:relative;display:flex;align-items:center;gap:8px;padding:10px;min-width:0}.grow{flex:1 1 auto;min-width:0}.label{display:block;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.list-row .label.title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}.list-stats{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;flex:0 1 auto;min-width:0}.stat-pill{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.stat-pill .icon{font-size:13px}.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;background:color-mix(in srgb,var(--shared) 16%, transparent);color:var(--shared);font-size:11px;line-height:1;white-space:nowrap}.actions,.hover-tools{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:inline-flex;gap:6px;opacity:0;pointer-events:none;transition:opacity .12s ease;z-index:2;padding-left:8px;background:linear-gradient(90deg, transparent 0%, color-mix(in srgb,var(--panel-2) 72%, transparent) 18%, var(--panel-2) 38%)}.group-summary .hover-tools,.todo-row .hover-tools{background:linear-gradient(90deg, transparent 0%, color-mix(in srgb,var(--panel) 72%, transparent) 18%, var(--panel) 38%)}.list-card:hover .actions,.list-card:focus-within .actions,.todo-row:hover .hover-tools,.todo-row:focus-within .hover-tools,.group-summary:hover .hover-tools,.group:focus-within .hover-tools{opacity:1;pointer-events:auto}.action{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid transparent;background:transparent;color:var(--text);border-radius:6px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease}.action:hover{border-color:var(--border);transform:translateY(-1px)}.action-danger{color:var(--danger)}.action-danger:hover{border-color:color-mix(in srgb,var(--danger) 55%, var(--border));background:var(--dangerBg)}.content{display:flex;flex-direction:column;gap:8px;padding:10px;border-top:1px solid var(--border)}.drop-target.over{outline:1px solid var(--focus);outline-offset:-1px}.group{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--panel)}.group-summary{position:relative;list-style:none;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;cursor:pointer}.group-summary::-webkit-details-marker{display:none}.group-body{display:flex;flex-direction:column;gap:8px;padding:0 10px 10px 18px}.todo-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:8px}.todo-main{display:flex;flex-direction:column;gap:2px;min-width:0;padding-top:1px}.todo-date{font-size:11px;color:var(--muted);opacity:0;max-height:0;overflow:hidden;transform:translateY(-2px);transition:opacity .12s ease,max-height .12s ease,transform .12s ease}.todo-row:hover .todo-date,.todo-row:focus-within .todo-date{opacity:1;max-height:18px;transform:translateY(0)}.quick-add-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px;background:color-mix(in srgb,var(--panel) 80%, transparent)}.quick-add-input{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:6px}.check{width:18px;height:18px;border:1.5px solid color-mix(in srgb,var(--text) 55%, var(--border));border-radius:5px;background:color-mix(in srgb,var(--panel-2) 88%, white 12%);cursor:pointer;padding:0;position:relative;flex:0 0 auto;margin-top:1px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bg) 55%, transparent)}.check:hover{border-color:var(--focus);background:color-mix(in srgb,var(--hover) 55%, var(--panel-2))}.check.done{background:var(--vscode-testing-iconPassed,#2ea043);border-color:var(--vscode-testing-iconPassed,#2ea043);box-shadow:none}.check.done::after{content:'';position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}.done{text-decoration:line-through;color:var(--muted)}.empty{padding:8px;color:var(--muted)}.caret{transition:transform .12s ease}.section.closed .caret,.details-caret{transform:rotate(-90deg)}details[open]>.group-summary .details-caret,.list-card.expanded .caret-list{transform:rotate(0)}.caret-list{transform:rotate(-90deg)}@media (max-width: 320px){.list-stats{display:none}}
+ </style>
+<style>.badge-icon{padding:4px 6px}.action-share{color:var(--shared)}.action-share:hover{border-color:color-mix(in srgb,var(--shared) 60%, var(--border));background:color-mix(in srgb,var(--shared) 14%, transparent)}</style></head><body><div class="app">
+<div class="toolbar"><input id="filter" class="filter" type="text" value="${this.escapeHtml(filter)}" placeholder="Filter tasks and folders" />${filter ? `<button class="btn" data-action="clearFilter" title="Clear filter">${this.icon("clear")}</button>` : ""}</div>
+<section class="section ${shellState.lists ? "" : "closed"}"><div class="section-header" data-action="toggleShellSection" data-shell-id="lists"><span class="caret">${this.icon("chevron")}</span><span class="title">${target ? "List Editor" : "Lists"}</span><span class="meta">${renderedLists.filter((list) => list.source === "local").length} local / ${renderedLists.filter((list) => list.source === "shared").length} shared</span></div><div class="section-body"><div class="stack">${renderedLists.map((list) => this.renderListCard(list, expandedListId === list.id, filter)).join("") || '<div class="empty">No visible lists.</div>'}</div></div></section>
+</div>
 <script>
-const vscode = acquireVsCodeApi();
-const menuToggle = document.getElementById('menuToggle');
-const menu = document.getElementById('menu');
-const filterInput = document.getElementById('filterInput');
-const prevState = vscode.getState() || {};
-let filterTimer;
-let draggedTargetId = null;
-
-if (prevState.filterValue && filterInput.value !== prevState.filterValue) {
-  filterInput.value = prevState.filterValue;
-}
-if (prevState.keepFilterFocus) {
-  requestAnimationFrame(() => {
-    filterInput.focus();
-    const pos = Number.isInteger(prevState.cursorPos) ? prevState.cursorPos : filterInput.value.length;
-    filterInput.setSelectionRange(pos, pos);
-  });
-}
-
-menuToggle.addEventListener('click', (event) => {
-  event.stopPropagation();
-  menu.classList.toggle('open');
-});
-
-document.addEventListener('click', () => {
-  menu.classList.remove('open');
-});
-
-menu.addEventListener('click', (event) => {
-  event.stopPropagation();
-});
-
-const postAction = (target) => {
-  const action = target.getAttribute('data-action');
-  if (!action) {
-    return;
+const vscode=acquireVsCodeApi();
+const readState=()=>vscode.getState()||{};
+const writeState=next=>vscode.setState(next);
+const findQuickAddInput=(listId,groupId)=>Array.from(document.querySelectorAll('.quick-add-input')).find(input=>input.dataset.listId===listId&&((input.dataset.groupId??'')===(groupId??'')));
+const rememberQuickAddFocus=(listId,groupId)=>{const state=readState();writeState({...state,pendingQuickAdd:{listId,groupId:groupId??''}});};
+const restoreQuickAddFocus=()=>{const state=readState();const pending=state.pendingQuickAdd;if(!pending){return;}const input=findQuickAddInput(pending.listId,pending.groupId);if(input instanceof HTMLInputElement){input.focus();input.select();}writeState({...state,pendingQuickAdd:undefined});};
+document.getElementById('filter')?.addEventListener('input',event=>vscode.postMessage({type:'setFilter',value:event.target.value}));
+document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(!target){return;}const type=target.dataset.action;if(type==='toggleShellSection'){vscode.postMessage({type,shellId:target.dataset.shellId});return;}if(type==='toggleListExpanded'){vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}if(type==='addGroup'||type==='addTodo'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='quickAddTodo'){event.stopPropagation();const row=target.closest('.quick-add-row');const input=row?.querySelector('.quick-add-input');rememberQuickAddFocus(target.dataset.listId,target.dataset.groupId);vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,text:input?.value??'',source:target.dataset.source});if(input){input.value='';}return;}if(type==='shareCurrentList'||type==='copyShareKey'||type==='openListInEditor'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}if(type==='renameGroup'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='toggleDone'||type==='deleteTodo'||type==='renameTodo'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,todoId:target.dataset.todoId,source:target.dataset.source});return;}if(type==='deleteGroup'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='deleteList'||type==='renameList'||type==='syncSharedList'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}vscode.postMessage({type});});
+document.addEventListener('keydown',event=>{const input=event.target.closest('.quick-add-input');if(!input||event.key!=='Enter'){return;}event.preventDefault();rememberQuickAddFocus(input.dataset.listId,input.dataset.groupId);vscode.postMessage({type:'quickAddTodo',listId:input.dataset.listId,groupId:input.dataset.groupId,text:input.value,source:input.dataset.source});input.value='';});
+document.querySelectorAll('[data-drop-list-id]').forEach(element=>{element.addEventListener('dragover',event=>{event.preventDefault();event.stopPropagation();element.classList.add('over');});element.addEventListener('dragleave',event=>{event.stopPropagation();element.classList.remove('over');});element.addEventListener('drop',event=>{event.preventDefault();event.stopPropagation();element.classList.remove('over');const raw=event.dataTransfer?.getData('application/x-todo-item');if(!raw){return;}const payload=JSON.parse(raw);if(payload.type==='todo'){vscode.postMessage({type:'moveTodo',sourceListId:payload.listId,todoId:payload.todoId,targetListId:element.dataset.dropListId,targetGroupId:element.dataset.dropGroupId,source:payload.source});return;}vscode.postMessage({type:'moveGroup',sourceListId:payload.listId,groupId:payload.groupId,targetListId:element.dataset.dropListId,targetGroupId:element.dataset.dropGroupId,source:payload.source});});});
+document.querySelectorAll('.drag').forEach(element=>{element.addEventListener('dragstart',event=>{event.stopPropagation();event.dataTransfer?.setData('application/x-todo-item',JSON.stringify({type:element.dataset.dragType,listId:element.dataset.listId,todoId:element.dataset.todoId,groupId:element.dataset.groupId,source:element.dataset.source}));if(event.dataTransfer){event.dataTransfer.effectAllowed='move';}});});
+restoreQuickAddFocus();
+</script></body></html>`;
   }
 
-  if (action === 'clearFilter') {
-    filterInput.value = '';
-    vscode.setState({ filterValue: '', keepFilterFocus: false, cursorPos: 0 });
+  private buildRenderableLists(): RenderedList[] {
+    const sharedLinkedListIds = new Set(this.sharedListsCache.map((record) => record.listId));
+    const localLists = this.state.listLists().map<RenderedList>((list) => ({
+      source: "local",
+      id: list.id,
+      displayId: list.id,
+      name: list.name,
+      createdAt: list.createdAt,
+      store: list.store
+    })).filter((list) => !sharedLinkedListIds.has(list.id));
+    const sharedLists = this.sharedListsCache.map<RenderedList>((record) => ({
+      source: "shared",
+      id: record.id,
+      displayId: record.id,
+      name: record.listName,
+      createdAt: record.snapshot.createdAt,
+      store: record.snapshot.store,
+      record,
+      sharedBadge: `${record.target.owner}/${record.target.repo}`
+    }));
+    return [...localLists, ...sharedLists].sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name));
   }
 
-  const message = { type: action };
-  if (target.dataset.mode) {
-    message.mode = target.dataset.mode;
-  }
-  if (target.dataset.groupId) {
-    message.groupId = target.dataset.groupId;
-  }
-  if (target.dataset.todoId) {
-    message.todoId = target.dataset.todoId;
-  }
-  if (target.dataset.expand) {
-    message.expand = target.dataset.expand === 'true';
-  }
-  if (target.dataset.viewMode) {
-    message.viewMode = target.dataset.viewMode;
-  }
-  if (target.dataset.targetId) {
-    message.targetId = target.dataset.targetId;
-  }
-  if (target.dataset.shellId) {
-    message.shellId = target.dataset.shellId;
+  private renderListCard(list: RenderedList, isExpanded: boolean, filter: string): string {
+    const groups = this.countVisibleGroups(list.store.groups, filter);
+    const todos = this.countVisibleTodos(list.store, filter);
+    const body = isExpanded
+      ? `${this.sortTodosByCreatedAt(list.store.todos).filter((todo) => this.todoMatches(todo, filter)).map((todo) => this.renderTodoRow(list.displayId, list.source, todo)).join("")}${list.store.groups.map((group) => this.renderGroup(list.displayId, list.source, group, filter)).filter(Boolean).join("")}${this.renderQuickAddRow(list.displayId, list.source)}`
+      : "";
+    return `<article class="list-card ${list.source === "shared" ? "shared" : ""} ${isExpanded ? "expanded" : ""}"><div class="list-row drop-target" data-action="toggleListExpanded" data-list-id="${list.displayId}" data-source="${list.source}" data-drop-list-id="${list.displayId}"><span class="caret-list">${this.icon("chevron")}</span><div class="grow"><span class="label title" title="${this.escapeHtml(list.name)}">${this.escapeHtml(list.name)}</span>${list.sharedBadge ? `<button class="badge badge-icon action action-share" type="button" data-action="copyShareKey" data-list-id="${list.displayId}" data-source="${list.source}" title="Copy share key" aria-label="Copy share key">${this.icon("link")}</button>` : ""}</div><span class="list-stats" aria-label="${groups} folders and ${todos} tasks"><span class="stat-pill" title="${groups} folders">${this.icon("folder")}<span>${groups}</span></span><span class="stat-pill" title="${todos} tasks">${this.icon("task")}<span>${todos}</span></span></span><span class="actions">${list.source === "local" ? `<button class="action action-share" type="button" data-action="shareCurrentList" data-list-id="${list.displayId}" data-source="${list.source}" title="Share this list">${this.icon("link")}</button>` : `<button class="action action-share" type="button" data-action="copyShareKey" data-list-id="${list.displayId}" data-source="${list.source}" title="Copy share key">${this.icon("copy")}</button>`}<button class="action" type="button" data-action="addGroup" data-list-id="${list.displayId}" data-source="${list.source}" title="Add root folder">${this.icon("folderPlus")}</button><button class="action" type="button" data-action="renameList" data-list-id="${list.displayId}" data-source="${list.source}" title="Rename list">${this.icon("pencil")}</button><button class="action action-danger" type="button" data-action="deleteList" data-list-id="${list.displayId}" data-source="${list.source}" title="Delete list">${this.icon("trash")}</button></span></div>${isExpanded ? `<div class="content drop-target" data-drop-list-id="${list.displayId}" data-source="${list.source}">${body || '<div class="empty">No matching items.</div>'}</div>` : ""}</article>`;
   }
 
-  vscode.postMessage(message);
-};
-
-filterInput.addEventListener('input', () => {
-  const pos = filterInput.selectionStart ?? filterInput.value.length;
-  vscode.setState({ filterValue: filterInput.value, keepFilterFocus: true, cursorPos: pos });
-  clearTimeout(filterTimer);
-  filterTimer = setTimeout(() => {
-    vscode.postMessage({ type: 'setFilter', value: filterInput.value || '' });
-  }, 140);
-});
-
-filterInput.addEventListener('focus', () => {
-  const pos = filterInput.selectionStart ?? filterInput.value.length;
-  vscode.setState({ filterValue: filterInput.value, keepFilterFocus: true, cursorPos: pos });
-});
-
-filterInput.addEventListener('blur', () => {
-  vscode.setState({ filterValue: filterInput.value, keepFilterFocus: false, cursorPos: filterInput.value.length });
-});
-
-document.querySelectorAll('[data-action]').forEach((element) => {
-  element.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    postAction(event.currentTarget);
-    menu.classList.remove('open');
-  });
-});
-
-document.querySelectorAll('[data-drag-target-id]').forEach((element) => {
-  element.addEventListener('dragstart', (event) => {
-    draggedTargetId = element.dataset.dragTargetId;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', draggedTargetId || '');
-  });
-  element.addEventListener('dragend', () => {
-    draggedTargetId = null;
-    document.querySelectorAll('.drop-highlight').forEach((item) => item.classList.remove('drop-highlight'));
-  });
-});
-
-document.querySelectorAll('[data-drop-target-id][data-drop-group-id]').forEach((element) => {
-  element.addEventListener('dragover', (event) => {
-    if (!draggedTargetId) {
-      return;
-    }
-    if (draggedTargetId === element.dataset.dropTargetId) {
-      return;
-    }
-    event.preventDefault();
-    element.classList.add('drop-highlight');
-  });
-  element.addEventListener('dragleave', () => {
-    element.classList.remove('drop-highlight');
-  });
-  element.addEventListener('drop', (event) => {
-    if (!draggedTargetId) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    element.classList.remove('drop-highlight');
-    vscode.postMessage({
-      type: 'moveTargetToGroup',
-      sourceTargetId: draggedTargetId,
-      targetId: element.dataset.dropTargetId,
-      groupId: element.dataset.dropGroupId
-    });
-    draggedTargetId = null;
-  });
-});
-</script>
-</body>
-</html>`;
-  }
-
-  private renderTargetBrowser(targets: ListTarget[], selectedTargetId: StoreTargetId): string {
-    return `<div class="target-list">
-      ${targets
-        .map(
-          (target) => `<div class="target-item ${target.id === selectedTargetId ? "is-active" : ""}" data-drag-target-id="${target.id}" draggable="true">
-            <button type="button" class="target-item-main" data-action="selectTarget" data-target-id="${target.id}">
-              <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h4.4l1.4-2H14v8.5H2z"/><path d="M2 6h12"/></svg></span>
-              <span class="target-item-title">${this.escapeHtml(target.label)}</span>
-              <span class="target-item-meta">${this.escapeHtml(target.description)}</span>
-            </button>
-            <span class="target-item-actions">
-              ${target.id.startsWith("scope:") ? `<button type="button" class="item-action" data-action="deleteTarget" data-target-id="${target.id}" title="Delete list"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9"/><path d="M6 4.5V3h4v1.5"/><path d="M5 6v6.5h6V6"/><path d="M7.5 7.5v3.5M10.5 7.5v3.5"/></svg></button>` : `<button type="button" class="item-action" data-action="clearTarget" data-target-id="${target.id}" title="Clear list"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11"/><path d="M5.5 4.5V3h5v1.5"/><path d="M4.5 6.5v5.5"/><path d="M8 6.5v5.5"/><path d="M11.5 6.5v5.5"/></svg></button>`}
-            </span>
-          </div>`
-        )
-        .join("")}
-    </div>`;
-  }
-
-  private renderSelectedTargetView(targetId: StoreTargetId, label: string, filter: string): string {
-    const store = this.state.readTargetStore(targetId);
-    const meta = targetId.startsWith("scope:") ? "shared project" : targetId;
-    return this.renderSection(targetId, label, store, filter, meta, false);
-  }
-
-  private renderSection(targetId: StoreTargetId, title: string, store: TodoStore, filter: string, metaOverride?: string, showTransferActions = false): string {
-    const groupsHtml = store.groups
-      .map((g) => this.renderGroup(targetId, g, 0, filter, store.hideCompleted, store.expandGroups))
-      .filter(Boolean)
-      .join("");
-
-    return `<section class="section ${store.sectionCollapsed ? "is-collapsed" : ""}">
-      <div class="section-header" data-action="toggleSectionCollapsed" data-target-id="${targetId}">
-        <span class="section-caret ${store.sectionCollapsed ? "is-collapsed" : ""}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span>
-        <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h4.4l1.4-2H14v8.5H2z"/><path d="M2 6h12"/></svg></span>
-        <span class="section-title">${title}</span>
-        <span class="section-meta">${targetId === "workspace" ? "__WORKSPACE_SCOPE_META__ | " : metaOverride ? `${metaOverride} | ` : ""}${store.hideCompleted ? "hide done" : "show done"} | ${store.expandGroups ? "expanded" : "collapsed"}</span>
-        <span class="section-actions">
-          <button type="button" class="section-btn" data-action="addRootGroup" data-target-id="${targetId}" title="Add root group"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5h5l1.2 1.5H14v6.5H2z"/><path d="M12.5 2.5v3M11 4h3"/></svg></button>
-          <button type="button" class="section-btn" data-action="addTodo" data-target-id="${targetId}" title="Add TODO"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h7.5v9H3z"/><path d="M5 6h3.5M5 8h3.5"/><path d="M12.5 8v4M10.5 10h4"/></svg></button>
-          ${showTransferActions ? `<button type="button" class="section-btn" data-action="clearTarget" data-target-id="${targetId}" title="Clear list"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11"/><path d="M5.5 4.5V3h5v1.5"/><path d="M4.5 6.5v5.5"/><path d="M8 6.5v5.5"/><path d="M11.5 6.5v5.5"/></svg></button>` : ""}
-          <button type="button" class="section-btn" data-action="setSectionExpand" data-target-id="${targetId}" data-expand="${store.expandGroups ? "false" : "true"}" title="${store.expandGroups ? "Collapse groups" : "Expand groups"}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5 8 10l4-3.5"/></svg></button>
-          <button type="button" class="section-btn" data-action="toggleHideCompleted" data-target-id="${targetId}" title="Toggle hide completed"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8s2-3.5 5.5-3.5S13.5 8 13.5 8s-2 3.5-5.5 3.5S2.5 8 2.5 8z"/><circle cx="8" cy="8" r="1.7"/></svg></button>
-        </span>
-      </div>
-      <div class="section-body">
-        ${groupsHtml || '<div class="empty">No groups yet.</div>'}
-      </div>
-    </section>`;
-  }
-
-  private renderWorkspaceBlocks(store: TodoStore, filter: string): string {
-    const cardsHtml = store.groups
-      .map((group) => this.renderWorkspaceCard("workspace", group, filter, store.hideCompleted, store.expandGroups, store.collapsedGroupIds))
-      .filter(Boolean)
-      .join("");
-
-    return `<section class="section ${store.sectionCollapsed ? "is-collapsed" : ""}">
-      <div class="section-header" data-action="toggleSectionCollapsed" data-mode="workspace">
-        <span class="section-caret ${store.sectionCollapsed ? "is-collapsed" : ""}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span>
-        <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h4.4l1.4-2H14v8.5H2z"/><path d="M2 6h12"/></svg></span>
-        <span class="section-title">Workspace</span>
-        <span class="section-meta">__WORKSPACE_SCOPE_META__ | block view</span>
-        <span class="section-actions">
-          <button type="button" class="section-btn" data-action="addRootGroup" data-mode="workspace" title="Add root group"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5h5l1.2 1.5H14v6.5H2z"/><path d="M12.5 2.5v3M11 4h3"/></svg></button>
-        </span>
-      </div>
-      <div class="section-body">
-        <div class="workspace-grid">
-          ${cardsHtml || '<div class="empty">No workspace groups yet.</div>'}
-        </div>
-      </div>
-    </section>`;
-  }
-
-  private renderWorkspaceCard(
-    targetId: StoreTargetId,
-    group: TodoGroup,
-    filter: string,
-    hideCompleted: boolean,
-    expandGroups: boolean,
-    collapsedGroupIds: string[]
-  ): string {
-    const visibleSubgroups = group.groups
-      .map((child) => this.renderGroup(targetId, child, 0, filter, hideCompleted, expandGroups))
-      .filter(Boolean)
-      .join("");
-    const visibleTodos = group.todos
-      .filter((todo) => this.todoMatches(todo, filter, hideCompleted))
-      .map((todo) => this.renderTodo(targetId, todo, 0))
-      .join("");
-    const groupMatch = !filter || group.name.toLowerCase().includes(filter);
-    const hasVisibleChildren = Boolean(visibleSubgroups || visibleTodos);
-
-    if (!groupMatch && !hasVisibleChildren) {
+  private renderGroup(listId: ListId, source: ListSource, group: TodoGroup, filter: string): string {
+    const groupMatches = !filter || group.name.toLowerCase().includes(filter.toLowerCase());
+    const todos = this.sortTodosByCreatedAt(group.todos).filter((todo) => this.todoMatches(todo, filter)).map((todo) => this.renderTodoRow(listId, source, todo)).join("");
+    const groups = group.groups.map((item) => this.renderGroup(listId, source, item, filter)).filter(Boolean).join("");
+    if (!groupMatches && !todos && !groups) {
       return "";
     }
-
-    const isCollapsed = collapsedGroupIds.includes(group.id);
-
-    return `<article class="workspace-card ${isCollapsed ? "is-collapsed" : ""}">
-      <div class="workspace-card-header" data-action="toggleGroupCardCollapsed" data-target-id="${targetId}" data-group-id="${group.id}" data-drop-target-id="${targetId}" data-drop-group-id="${group.id}">
-        <span class="workspace-card-caret"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span>
-        <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h4.4l1.4-2H14v8.5H2z"/><path d="M2 6h12"/></svg></span>
-        <span class="workspace-card-title">${this.escapeHtml(group.name)}</span>
-        <span class="item-actions">
-          <button type="button" class="item-action" data-action="addSubgroup" data-target-id="${targetId}" data-group-id="${group.id}" title="Add subgroup"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5h5l1.2 1.5H14v6.5H2z"/><path d="M12.5 3v3M11 4.5h3"/></svg></button>
-          <button type="button" class="item-action" data-action="addTodo" data-target-id="${targetId}" data-group-id="${group.id}" title="Add TODO"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h7.5v9H3z"/><path d="M5 6h3.5M5 8h3.5"/><path d="M12.5 8v4M10.5 10h4"/></svg></button>
-          <button type="button" class="item-action" data-action="deleteGroup" data-target-id="${targetId}" data-group-id="${group.id}" title="Delete group"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9"/><path d="M6 4.5V3h4v1.5"/><path d="M5 6v6.5h6V6"/><path d="M7.5 7.5v3.5M10.5 7.5v3.5"/></svg></button>
-        </span>
-      </div>
-      <div class="workspace-card-body">
-        ${visibleTodos || visibleSubgroups ? `${visibleTodos}${visibleSubgroups}` : '<div class="empty">No TODOs yet.</div>'}
-      </div>
-    </article>`;
+    return `<details class="group" open><summary class="group-summary drop-target" data-drop-list-id="${listId}" data-source="${source}" data-drop-group-id="${group.id}"><span class="details-caret">${this.icon("chevron")}</span><span class="grow label">${this.escapeHtml(group.name)}</span><span class="hover-tools"><button class="action" type="button" data-action="addTodo" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Quick add TODO">${this.icon("plus")}</button><button class="action" type="button" data-action="addGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Add subgroup">${this.icon("folderPlus")}</button><button class="action" type="button" data-action="renameGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Rename folder">${this.icon("pencil")}</button><button class="action drag" type="button" draggable="true" data-drag-type="group" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Drag group">${this.icon("drag")}</button><button class="action action-danger" type="button" data-action="deleteGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Delete group">${this.icon("trash")}</button></span></summary><div class="group-body drop-target" data-drop-list-id="${listId}" data-source="${source}" data-drop-group-id="${group.id}">${todos}${groups || (todos ? "" : '<div class="empty">No items yet.</div>')}${this.renderQuickAddRow(listId, source, group.id)}</div></details>`;
   }
 
-  private renderGroup(
-    targetId: StoreTargetId,
-    group: TodoGroup,
-    depth: number,
-    filter: string,
-    hideCompleted: boolean,
-    expandGroups: boolean
-  ): string {
-    const visibleSubgroups = group.groups
-      .map((g) => this.renderGroup(targetId, g, depth + 1, filter, hideCompleted, expandGroups))
-      .filter(Boolean)
-      .join("");
-
-    const visibleTodos = group.todos
-      .filter((t) => this.todoMatches(t, filter, hideCompleted))
-      .map((t) => this.renderTodo(targetId, t, depth))
-      .join("");
-
-    const groupMatch = !filter || group.name.toLowerCase().includes(filter);
-    const hasVisibleChildren = Boolean(visibleSubgroups || visibleTodos);
-    if (!groupMatch && !hasVisibleChildren) {
-      return "";
-    }
-
-    return `<details class="group" ${expandGroups ? "open" : ""} style="margin-left:${depth * 12}px;">
-      <summary data-drop-target-id="${targetId}" data-drop-group-id="${group.id}">
-        <span class="caret"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 10 8l-4 3.5"/></svg></span>
-        <span class="item-label">
-          <span class="group-folder item-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h4.4l1.4-2H14v8.5H2z"/><path d="M2 6h12"/></svg></span>
-          <span class="group-name item-text">${this.escapeHtml(group.name)}</span>
-          <span class="item-actions">
-            <button type="button" class="item-action" data-action="addSubgroup" data-target-id="${targetId}" data-group-id="${group.id}" title="Add subgroup"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.5h5l1.2 1.5H14v6.5H2z"/><path d="M12.5 3v3M11 4.5h3"/></svg></button>
-            <button type="button" class="item-action" data-action="addTodo" data-target-id="${targetId}" data-group-id="${group.id}" title="Add TODO"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h7.5v9H3z"/><path d="M5 6h3.5M5 8h3.5"/><path d="M12.5 8v4M10.5 10h4"/></svg></button>
-            <button type="button" class="item-action" data-action="deleteGroup" data-target-id="${targetId}" data-group-id="${group.id}" title="Delete group"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9"/><path d="M6 4.5V3h4v1.5"/><path d="M5 6v6.5h6V6"/><path d="M7.5 7.5v3.5M10.5 7.5v3.5"/></svg></button>
-          </span>
-        </span>
-      </summary>
-      ${visibleTodos}
-      ${visibleSubgroups}
-    </details>`;
+  private renderTodoRow(listId: ListId, source: ListSource, todo: TodoItem): string {
+    const dateStr = new Date(todo.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const hoverDate = formatDate(todo.createdAt);
+    return `<div class="todo-row"><button class="check ${todo.done ? "done" : ""}" type="button" data-action="toggleDone" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Toggle done"></button><div class="grow todo-main"><span class="label ${todo.done ? "done" : ""}" title="Created: ${dateStr}">${this.escapeHtml(todo.text)}</span><span class="todo-date" title="Created: ${dateStr}">${hoverDate}</span></div><span class="hover-tools"><button class="action" type="button" data-action="renameTodo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Rename task">${this.icon("pencil")}</button><button class="action drag" type="button" draggable="true" data-drag-type="todo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Drag TODO">${this.icon("drag")}</button><button class="action action-danger" type="button" data-action="deleteTodo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Delete TODO">${this.icon("trash")}</button></span></div>`;
   }
 
-  private renderTodo(targetId: StoreTargetId, todo: TodoItem, depth: number): string {
-    const doneClass = todo.done ? "done" : "";
-
-    return `<div class="todo-row" style="margin-left:${(depth + 1) * 12}px;">
-      <span class="todo-main">
-        <button type="button" class="todo-check ${doneClass}" data-action="toggleDone" data-target-id="${targetId}" data-todo-id="${todo.id}" title="Mark TODO done/undone"></button>
-        <span class="todo-text ${doneClass} item-text">${this.escapeHtml(todo.text)}</span>
-        <span class="item-actions">
-          <button type="button" class="item-action" data-action="deleteTodo" data-target-id="${targetId}" data-todo-id="${todo.id}" title="Delete TODO"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9"/><path d="M6 4.5V3h4v1.5"/><path d="M5 6v6.5h6V6"/><path d="M7.5 7.5v3.5M10.5 7.5v3.5"/></svg></button>
-        </span>
-      </span>
-    </div>`;
+  private renderQuickAddRow(listId: ListId, source: ListSource, groupId?: GroupId): string {
+    return `<div class="quick-add-row ${groupId ? "" : "list-quick-add"}"><span class="settings-meta">${this.icon("plus")}</span><input class="quick-add-input" type="text" placeholder="Add task..." data-list-id="${listId}" data-source="${source}" ${groupId ? `data-group-id="${groupId}"` : ""} /><button class="action" type="button" data-action="quickAddTodo" data-list-id="${listId}" data-source="${source}" ${groupId ? `data-group-id="${groupId}"` : ""} title="Add task">${this.icon("plus")}</button></div>`;
   }
 
-  private renderTransferSection(selectedTarget?: ListTarget): string {
-    return `<section class="section">
-      <div class="section-header">
-        <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h4.4l1.4-2H14v8.5H2z"/><path d="M2 6h12"/></svg></span>
-        <span class="section-title">Transfer</span>
-        <span class="section-meta">${this.escapeHtml(selectedTarget?.label ?? "no list selected")}</span>
-      </div>
-      <div class="section-body">
-        <div class="target-list">
-          <button type="button" class="target-item" data-action="exportAll">
-            <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7"/><path d="M5.5 7 8 9.5 10.5 7"/><path d="M3 11.5h10v2H3z"/></svg></span>
-            <span class="target-item-title">Export all lists</span>
-          </button>
-          <button type="button" class="target-item" data-action="importData">
-            <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 9.5v-7"/><path d="M5.5 5 8 2.5 10.5 5"/><path d="M3 11.5h10v2H3z"/></svg></span>
-            <span class="target-item-title">Import lists</span>
-          </button>
-          ${
-            selectedTarget
-              ? `<button type="button" class="target-item" data-action="exportTarget" data-target-id="${selectedTarget.id}">
-            <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7"/><path d="M5.5 7 8 9.5 10.5 7"/><path d="M3 11.5h10v2H3z"/></svg></span>
-            <span class="target-item-title">Export selected list</span>
-            <span class="target-item-meta">${this.escapeHtml(selectedTarget.label)}</span>
-          </button>
-          <button type="button" class="target-item" data-action="importData" data-target-id="${selectedTarget.id}">
-            <span class="section-folder"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 9.5v-7"/><path d="M5.5 5 8 2.5 10.5 5"/><path d="M3 11.5h10v2H3z"/></svg></span>
-            <span class="target-item-title">Import into selected list</span>
-            <span class="target-item-meta">${this.escapeHtml(selectedTarget.label)}</span>
-          </button>`
-              : ""
-          }
-        </div>
-      </div>
-    </section>`;
-  }
-
-  private todoMatches(todo: TodoItem, filter: string, hideCompleted: boolean): boolean {
-    if (hideCompleted && todo.done) {
-      return false;
-    }
-    if (!filter) {
-      return true;
-    }
-    return todo.text.toLowerCase().includes(filter);
-  }
-
-  private flattenGroups(groups: TodoGroup[]): TodoGroup[] {
-    return groups.flatMap((g) => [g, ...this.flattenGroups(g.groups)]);
-  }
-
-  private findGroupById(groups: TodoGroup[], id: string): TodoGroup | undefined {
-    for (const group of groups) {
-      if (group.id === id) {
-        return group;
-      }
-      const inChild = this.findGroupById(group.groups, id);
-      if (inChild) {
-        return inChild;
-      }
-    }
-    return undefined;
-  }
-
-  private findTodoRef(groups: TodoGroup[], todoId: string): { group: TodoGroup; todo: TodoItem } | undefined {
-    for (const group of groups) {
-      const todo = group.todos.find((t) => t.id === todoId);
-      if (todo) {
-        return { group, todo };
-      }
-      const inChild = this.findTodoRef(group.groups, todoId);
-      if (inChild) {
-        return inChild;
-      }
-    }
-    return undefined;
-  }
-
-  private deleteTodoById(groups: TodoGroup[], todoId: string): boolean {
-    for (const group of groups) {
-      const index = group.todos.findIndex((t) => t.id === todoId);
-      if (index >= 0) {
-        group.todos.splice(index, 1);
-        return true;
-      }
-      const removedInChild = this.deleteTodoById(group.groups, todoId);
-      if (removedInChild) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private deleteGroupById(groups: TodoGroup[], id: string): boolean {
-    const atRoot = groups.findIndex((g) => g.id === id);
-    if (atRoot >= 0) {
-      groups.splice(atRoot, 1);
-      return true;
-    }
-
-    for (const group of groups) {
-      const removed = this.deleteGroupById(group.groups, id);
-      if (removed) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private async cleanupExpiredCompletedTodos(mode: StorageMode): Promise<void> {
-    const store = this.state.readStore(mode);
-    const before = JSON.stringify(store.groups);
-    const dayMs = 24 * 60 * 60 * 1000;
+  private async cleanupExpiredCompletedTodos(): Promise<void> {
+    const retentionMs = this.state.getCompletedRetentionDays() * 24 * 60 * 60 * 1000;
     const now = Date.now();
-
-    this.cleanupGroup(store.groups, now, dayMs);
-
-    if (JSON.stringify(store.groups) !== before) {
-      await this.state.writeStore(mode, store);
+    for (const list of this.state.listLists()) {
+      const store = this.cloneStore(list.store);
+      if (this.cleanupStore(store, now, retentionMs)) {
+        await this.state.updateList(list.id, (target) => {
+          target.store = store;
+        });
+      }
     }
   }
 
-  private cleanupGroup(groups: TodoGroup[], now: number, ttlMs: number): void {
-    for (const group of groups) {
-      group.todos = group.todos.filter((todo) => {
-        if (!todo.done || !todo.completedAt) {
-          return true;
-        }
-        return now - todo.completedAt < ttlMs;
-      });
-      this.cleanupGroup(group.groups, now, ttlMs);
-    }
-  }
-
-  private newId(): string {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-
-  private normalizeStore(raw?: Partial<TodoStore>): TodoStore {
-    const hideDefault = vscode.workspace
-      .getConfiguration("todoListPro")
-      .get<boolean>("hideCompletedByDefault", false);
-
-    return {
-      groups: raw?.groups ?? [],
-      hideCompleted: raw?.hideCompleted ?? hideDefault,
-      expandGroups: raw?.expandGroups ?? true,
-      sectionCollapsed: raw?.sectionCollapsed ?? false,
-      collapsedGroupIds: raw?.collapsedGroupIds ?? []
-    };
-  }
-
-  private async writeExportFile(entries: ExportEntry[], defaultFileName: string): Promise<void> {
+  private async writeExportFile(lists: TodoList[], defaultFileName: string): Promise<void> {
     const uri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.joinPath(vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file("."), defaultFileName),
       filters: { JSON: ["json"] },
@@ -1911,109 +1611,354 @@ document.querySelectorAll('[data-drop-target-id][data-drop-group-id]').forEach((
     }
 
     const payload: ExportPayload = {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      entries
+      entries: lists.map((list) => ({ list }))
     };
-
     await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(payload, null, 2), "utf8"));
-    void vscode.window.showInformationMessage(`Exported ${entries.length} list${entries.length === 1 ? "" : "s"}.`);
+    void vscode.window.showInformationMessage(`Exported ${lists.length} list${lists.length === 1 ? "" : "s"}.`);
+  }
+
+  private normalizeImportedLists(raw: unknown): TodoList[] {
+    const parsed = raw as Partial<ExportPayload> & {
+      entries?: Array<{ list?: Partial<TodoList>; label?: string; store?: Partial<TodoStore> }>;
+    };
+    const usedIds = new Set(this.state.listLists().map((list) => list.id));
+    return ((parsed.entries ?? []) as Array<{ list?: Partial<TodoList>; label?: string; store?: Partial<TodoStore> }>)
+      .map((entry, index) => {
+        const list = entry.list;
+        const idCandidate = typeof list?.id === "string" ? list.id : this.newId("imported");
+        const id = usedIds.has(idCandidate) ? this.newId("imported") : idCandidate;
+        usedIds.add(id);
+        return {
+          id,
+          name:
+            typeof list?.name === "string" && list.name.trim()
+              ? list.name.trim()
+              : typeof entry.label === "string" && entry.label.trim()
+                ? entry.label.trim()
+                : `Imported List ${index + 1}`,
+          createdAt: typeof list?.createdAt === "number" ? list.createdAt : Date.now(),
+          store: this.normalizeStore(list?.store ?? entry.store)
+        };
+      })
+      .filter((list) => list.name.length > 0);
+  }
+
+  private normalizeStore(raw?: Partial<TodoStore>): TodoStore {
+    return {
+      groups: (raw?.groups ?? []).map((group) => ({
+        id: group.id || this.newId("group"),
+        name: group.name || "Untitled group",
+        groups: this.normalizeStore({ groups: group.groups ?? [], todos: [] }).groups,
+        todos: (group.todos ?? []).map((todo) => ({
+          id: todo.id || this.newId("todo"),
+          text: todo.text ?? "",
+          done: Boolean(todo.done),
+          createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+          completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
+        }))
+      })),
+      todos: (raw?.todos ?? []).map((todo) => ({
+        id: todo.id || this.newId("todo"),
+        text: todo.text ?? "",
+        done: Boolean(todo.done),
+        createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+        completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
+      }))
+    };
+  }
+
+  private findGroupById(groups: TodoGroup[], groupId: GroupId): TodoGroup | undefined {
+    for (const group of groups) {
+      if (group.id === groupId) {
+        return group;
+      }
+      const nested = this.findGroupById(group.groups, groupId);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  private findTodo(store: TodoStore, todoId: TodoId): TodoItem | undefined {
+    const root = store.todos.find((todo) => todo.id === todoId);
+    if (root) {
+      return root;
+    }
+    const visit = (groups: TodoGroup[]): TodoItem | undefined => {
+      for (const group of groups) {
+        const todo = group.todos.find((item) => item.id === todoId);
+        if (todo) {
+          return todo;
+        }
+        const nested = visit(group.groups);
+        if (nested) {
+          return nested;
+        }
+      }
+      return undefined;
+    };
+    return visit(store.groups);
+  }
+
+  private removeTodo(store: TodoStore, todoId: TodoId): TodoItem | undefined {
+    const rootIndex = store.todos.findIndex((todo) => todo.id === todoId);
+    if (rootIndex >= 0) {
+      return store.todos.splice(rootIndex, 1)[0];
+    }
+    const visit = (groups: TodoGroup[]): TodoItem | undefined => {
+      for (const group of groups) {
+        const index = group.todos.findIndex((todo) => todo.id === todoId);
+        if (index >= 0) {
+          return group.todos.splice(index, 1)[0];
+        }
+        const nested = visit(group.groups);
+        if (nested) {
+          return nested;
+        }
+      }
+      return undefined;
+    };
+    return visit(store.groups);
+  }
+
+  private removeGroup(groups: TodoGroup[], groupId: GroupId): TodoGroup | undefined {
+    const index = groups.findIndex((group) => group.id === groupId);
+    if (index >= 0) {
+      return groups.splice(index, 1)[0];
+    }
+    for (const group of groups) {
+      const nested = this.removeGroup(group.groups, groupId);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  private countVisibleTodos(store: TodoStore, filter: string): number {
+    const lowered = filter.toLowerCase();
+    let count = store.todos.filter((todo) => todo.text.toLowerCase().includes(lowered)).length;
+    const visit = (groups: TodoGroup[]): void => {
+      for (const group of groups) {
+        count += group.todos.filter((todo) => todo.text.toLowerCase().includes(lowered)).length;
+        visit(group.groups);
+      }
+    };
+    visit(store.groups);
+    return filter ? count : store.todos.length + this.countNestedTodos(store.groups);
+  }
+
+  private countNestedTodos(groups: TodoGroup[]): number {
+    return groups.reduce((sum, group) => sum + group.todos.length + this.countNestedTodos(group.groups), 0);
+  }
+
+  private countVisibleGroups(groups: TodoGroup[], filter: string): number {
+    const lowered = filter.toLowerCase();
+    let count = 0;
+    const visit = (items: TodoGroup[]): boolean => {
+      let any = false;
+      for (const group of items) {
+        const childVisible = visit(group.groups);
+        const todoVisible = group.todos.some((todo) => !filter || todo.text.toLowerCase().includes(lowered));
+        const groupVisible = !filter || group.name.toLowerCase().includes(lowered) || childVisible || todoVisible;
+        if (groupVisible) {
+          count += 1;
+          any = true;
+        }
+      }
+      return any;
+    };
+    visit(groups);
+    return count;
+  }
+
+  private cleanupStore(store: TodoStore, now: number, retentionMs: number): boolean {
+    let changed = false;
+    store.todos = store.todos.filter((todo) => {
+      const keep = !todo.done || !todo.completedAt || now - todo.completedAt < retentionMs;
+      if (!keep) {
+        changed = true;
+      }
+      return keep;
+    });
+    const visit = (groups: TodoGroup[]): void => {
+      for (const group of groups) {
+        group.todos = group.todos.filter((todo) => {
+          const keep = !todo.done || !todo.completedAt || now - todo.completedAt < retentionMs;
+          if (!keep) {
+            changed = true;
+          }
+          return keep;
+        });
+        visit(group.groups);
+      }
+    };
+    visit(store.groups);
+    return changed;
+  }
+
+  private cloneStore(store: TodoStore): TodoStore {
+    return JSON.parse(JSON.stringify(store)) as TodoStore;
+  }
+
+  private insertTodo(store: TodoStore, todo: TodoItem, targetGroupId?: GroupId): boolean {
+    if (!targetGroupId) {
+      store.todos.push(todo);
+      return true;
+    }
+    const group = this.findGroupById(store.groups, targetGroupId);
+    if (!group) {
+      return false;
+    }
+    group.todos.push(todo);
+    return true;
+  }
+
+  private insertGroup(groups: TodoGroup[], group: TodoGroup, targetGroupId?: GroupId): boolean {
+    if (!targetGroupId) {
+      groups.push(group);
+      return true;
+    }
+    const target = this.findGroupById(groups, targetGroupId);
+    if (!target) {
+      return false;
+    }
+    target.groups.push(group);
+    return true;
+  }
+
+  private containsGroup(root: TodoGroup, targetGroupId?: GroupId): boolean {
+    if (!targetGroupId) {
+      return false;
+    }
+    return root.groups.some((group) => group.id === targetGroupId || this.containsGroup(group, targetGroupId));
+  }
+
+  private sortTodosByCreatedAt(todos: TodoItem[]): TodoItem[] {
+    return todos
+      .map((todo, index) => ({ todo, index }))
+      .sort((a, b) => a.todo.createdAt - b.todo.createdAt || a.index - b.index)
+      .map(({ todo }) => todo);
+  }
+
+  private todoMatches(todo: TodoItem, filter: string): boolean {
+    return !filter || todo.text.toLowerCase().includes(filter.toLowerCase());
+  }
+
+  private newId(prefix: string): string {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 
   private slugify(value: string): string {
-    return value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "list";
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "todo-list";
+  }
+
+  private icon(name: "plus" | "folderPlus" | "folder" | "task" | "pencil" | "trash" | "export" | "import" | "drag" | "settings" | "clear" | "check" | "chevron" | "refresh" | "link" | "copy"): string {
+    const icons: Record<string, string> = {
+      plus: "add",
+      folderPlus: "new-folder",
+      folder: "folder",
+      task: "checklist",
+      pencil: "edit",
+      trash: "trash",
+      export: "export",
+      import: "cloud-upload",
+      drag: "gripper",
+      settings: "settings-gear",
+      clear: "close",
+      check: "check",
+      chevron: "chevron-right",
+      refresh: "refresh",
+      link: "link",
+      copy: "copy"
+    };
+    return `<span class="icon codicon codicon-${icons[name]}" aria-hidden="true"></span>`;
   }
 
   private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 }
 
-export function activate(context: vscode.ExtensionContext): void {
-  const state = new TodoState(context);
-  const controller = new TodoController(state);
+function formatDate(timestamp: number): string {
+  return new Intl.DateTimeFormat("cs-CZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(new Date(timestamp));
+}
 
-  const pickMode = async (): Promise<StorageMode | undefined> => {
+export function activate(context: vscode.ExtensionContext): void {
+  storageManager.initialize(context);
+
+  const state = new TodoState(context);
+  const controller = new TodoController(state, context.extensionUri);
+
+  const pickList = async (): Promise<TodoList | undefined> => {
+    await state.ensureInitialized();
+    const lists = state.listLists();
+    if (lists.length === 0) {
+      void vscode.window.showInformationMessage("Create a list first.");
+      return undefined;
+    }
     const picked = await vscode.window.showQuickPick(
-      [
-        { label: "Workspace", mode: "workspace" as StorageMode },
-        { label: "Profile", mode: "profile" as StorageMode }
-      ],
-      { title: "Select TODO section" }
+      lists.map((list) => ({ label: list.name, description: `${list.store.groups.length} groups`, list })),
+      { title: "Select list" }
     );
-    return picked?.mode;
+    return picked?.list;
   };
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("todoListProView", controller),
-    vscode.commands.registerCommand("todoListPro.addGroup", async () => {
-      const mode = await pickMode();
-      if (mode) {
-        await controller.addGroup(mode);
+    vscode.commands.registerCommand("todoListPro.createList", async () => controller.addList()),
+    vscode.commands.registerCommand("todoListPro.shareCurrentList", async () => controller.shareCurrentList()),
+    vscode.commands.registerCommand("todoListPro.openListInEditor", async () => {
+      const list = await pickList();
+      if (list) {
+        await controller.openListInEditor(list.id, "local");
       }
     }),
-    vscode.commands.registerCommand("todoListPro.addSubgroup", async () => {
-      vscode.window.showInformationMessage("Use subgroup icon on a group row.");
+    vscode.commands.registerCommand("todoListPro.addSharedList", async () => controller.addSharedList()),
+    vscode.commands.registerCommand("todoListPro.copyLocalListToShareMode", async () => controller.copyLocalListToShareMode()),
+    vscode.commands.registerCommand("todoListPro.syncSharedList", async () => controller.syncSharedList()),
+    vscode.commands.registerCommand("todoListPro.addGroup", async () => {
+      const list = await pickList();
+      if (list) {
+        await controller.addGroup(list.id);
+      }
     }),
     vscode.commands.registerCommand("todoListPro.addTodo", async () => {
-      const mode = await pickMode();
-      if (mode) {
-        await controller.addTodo(mode);
+      const list = await pickList();
+      if (list) {
+        await controller.addTodo(list.id);
       }
     }),
-    vscode.commands.registerCommand("todoListPro.toggleDone", async () => {
-      vscode.window.showInformationMessage("Use checkbox in TODO list.");
+    vscode.commands.registerCommand("todoListPro.importAll", async () => controller.importData()),
+    vscode.commands.registerCommand("todoListPro.exportAll", async () => controller.exportAll()),
+    vscode.commands.registerCommand("todoListPro.exportSingleList", async () => controller.exportSingleList()),
+    vscode.commands.registerCommand("todoListPro.configureStorageMode", async () => {
+      await controller.configureStorageMode();
     }),
-    vscode.commands.registerCommand("todoListPro.deleteItem", async () => {
-      vscode.window.showInformationMessage("Use delete icon on item row.");
+    vscode.commands.registerCommand("todoListPro.configureWorkspaceVisibility", async () => {
+      await controller.configureWorkspaceVisibility();
+    }),
+    vscode.commands.registerCommand("todoListPro.configureCompletedRetention", async () => {
+      await controller.configureCompletedRetention();
+    }),
+    vscode.commands.registerCommand("todoListPro.toggleAutoRefreshSharedLists", async () => {
+      await controller.toggleAutoRefreshSharedLists();
     }),
     vscode.commands.registerCommand("todoListPro.setFilter", async () => {
-      const value = await vscode.window.showInputBox({ prompt: "Filter TODOs/groups" });
+      const value = await vscode.window.showInputBox({ prompt: "Filter TODOs and folders" });
       if (typeof value === "string") {
         await controller.setFilter(value);
       }
     }),
-    vscode.commands.registerCommand("todoListPro.clearFilter", async () => {
-      await controller.clearFilter();
-    }),
-    vscode.commands.registerCommand("todoListPro.setExpandAll", async () => {
-      await controller.setExpandAll(true);
-    }),
-    vscode.commands.registerCommand("todoListPro.setCollapseAll", async () => {
-      await controller.setExpandAll(false);
-    }),
-    vscode.commands.registerCommand("todoListPro.toggleHideCompleted", async () => {
-      const mode = await pickMode();
-      if (mode) {
-        await controller.toggleHideCompleted(mode);
-      }
-    }),
-    vscode.commands.registerCommand("todoListPro.createWorkspaceLink", async () => {
-      await controller.createWorkspaceLink();
-    }),
-    vscode.commands.registerCommand("todoListPro.linkWorkspaceToScope", async () => {
-      await controller.linkWorkspaceToExistingScope();
-    }),
-    vscode.commands.registerCommand("todoListPro.unlinkWorkspaceScope", async () => {
-      await controller.unlinkWorkspaceScope();
-    }),
-    vscode.commands.registerCommand("todoListPro.setStorageWorkspace", async () => {
-      vscode.window.showInformationMessage("Storage switch is not needed now. Workspace and Profile sections are shown together.");
-    }),
-    vscode.commands.registerCommand("todoListPro.setStorageProfile", async () => {
-      vscode.window.showInformationMessage("Storage switch is not needed now. Workspace and Profile sections are shown together.");
-    }),
-    vscode.commands.registerCommand("todoListPro.refresh", async () => {
-      await controller.refresh();
-    })
+    vscode.commands.registerCommand("todoListPro.clearFilter", async () => controller.clearFilter()),
+    vscode.commands.registerCommand("todoListPro.refresh", async () => controller.refresh())
   );
 }
 

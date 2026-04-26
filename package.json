@@ -1,8 +1,8 @@
 {
-  "name": "todo-list-pro",
-  "displayName": "TODO List Pro",
-  "description": "A structured TODO sidebar for VS Code with nested groups, shared project lists, import/export, and fast filtering.",
-  "version": "0.0.1",
+  "name": "projects-todo-advanced",
+  "displayName": "Projects TODO Advanced",
+  "description": "A structured TODO sidebar for VS Code with standalone lists, workspace visibility, drag and drop, and import/export.",
+  "version": "0.0.2",
   "publisher": "greenpedro",
   "icon": "media/store/icon.png",
   "repository": {
@@ -17,8 +17,7 @@
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other",
-    "Productivity"
+    "Other"
   ],
   "keywords": [
     "todo",
@@ -27,29 +26,30 @@
     "sidebar",
     "productivity",
     "workspace",
-    "project"
+    "project",
+    "kanban",
+    "organizer",
+    "notes"
   ],
-  "galleryBanner": {
-    "color": "#0f172a",
-    "theme": "dark"
-  },
   "activationEvents": [
     "onView:todoListProView",
+    "onCommand:todoListPro.createList",
     "onCommand:todoListPro.addGroup",
-    "onCommand:todoListPro.addSubgroup",
     "onCommand:todoListPro.addTodo",
-    "onCommand:todoListPro.toggleDone",
-    "onCommand:todoListPro.deleteItem",
+    "onCommand:todoListPro.importAll",
+    "onCommand:todoListPro.exportAll",
+    "onCommand:todoListPro.exportSingleList",
+    "onCommand:todoListPro.configureStorageMode",
+    "onCommand:todoListPro.shareCurrentList",
+    "onCommand:todoListPro.openListInEditor",
+    "onCommand:todoListPro.addSharedList",
+    "onCommand:todoListPro.copyLocalListToShareMode",
+    "onCommand:todoListPro.syncSharedList",
+    "onCommand:todoListPro.toggleAutoRefreshSharedLists",
+    "onCommand:todoListPro.configureWorkspaceVisibility",
+    "onCommand:todoListPro.configureCompletedRetention",
     "onCommand:todoListPro.setFilter",
     "onCommand:todoListPro.clearFilter",
-    "onCommand:todoListPro.setExpandAll",
-    "onCommand:todoListPro.setCollapseAll",
-    "onCommand:todoListPro.toggleHideCompleted",
-    "onCommand:todoListPro.createWorkspaceLink",
-    "onCommand:todoListPro.linkWorkspaceToScope",
-    "onCommand:todoListPro.unlinkWorkspaceScope",
-    "onCommand:todoListPro.setStorageWorkspace",
-    "onCommand:todoListPro.setStorageProfile",
     "onCommand:todoListPro.refresh"
   ],
   "main": "./out/extension.js",
@@ -74,24 +74,64 @@
     },
     "commands": [
       {
-        "command": "todoListPro.addGroup",
-        "title": "TODO: Add Group"
+        "command": "todoListPro.createList",
+        "title": "Create List"
       },
       {
-        "command": "todoListPro.addSubgroup",
-        "title": "TODO: Add Subgroup"
+        "command": "todoListPro.addGroup",
+        "title": "TODO: Add Group"
       },
       {
         "command": "todoListPro.addTodo",
         "title": "TODO: Add TODO"
       },
       {
-        "command": "todoListPro.toggleDone",
-        "title": "TODO: Toggle Done"
+        "command": "todoListPro.configureWorkspaceVisibility",
+        "title": "Workspace Visibility..."
       },
       {
-        "command": "todoListPro.deleteItem",
-        "title": "TODO: Delete Item"
+        "command": "todoListPro.configureCompletedRetention",
+        "title": "Completed Retention..."
+      },
+      {
+        "command": "todoListPro.exportAll",
+        "title": "Export All"
+      },
+      {
+        "command": "todoListPro.exportSingleList",
+        "title": "Export Single List..."
+      },
+      {
+        "command": "todoListPro.configureStorageMode",
+        "title": "Storage Mode..."
+      },
+      {
+        "command": "todoListPro.shareCurrentList",
+        "title": "Share List"
+      },
+      {
+        "command": "todoListPro.openListInEditor",
+        "title": "Open List in Editor"
+      },
+      {
+        "command": "todoListPro.addSharedList",
+        "title": "Add Shared List"
+      },
+      {
+        "command": "todoListPro.copyLocalListToShareMode",
+        "title": "Copy Local List to Share Mode"
+      },
+      {
+        "command": "todoListPro.syncSharedList",
+        "title": "Sync Shared List"
+      },
+      {
+        "command": "todoListPro.toggleAutoRefreshSharedLists",
+        "title": "Auto Refresh Shared Lists..."
+      },
+      {
+        "command": "todoListPro.importAll",
+        "title": "Import"
       },
       {
         "command": "todoListPro.setFilter",
@@ -102,58 +142,105 @@
         "title": "TODO: Clear Filter"
       },
       {
-        "command": "todoListPro.setExpandAll",
-        "title": "TODO: Expand All Groups"
-      },
-      {
-        "command": "todoListPro.setCollapseAll",
-        "title": "TODO: Collapse All Groups"
-      },
-      {
-        "command": "todoListPro.toggleHideCompleted",
-        "title": "TODO: Toggle Hide Completed"
-      },
-      {
-        "command": "todoListPro.createWorkspaceLink",
-        "title": "TODO: Create Shared Workspace Project"
-      },
-      {
-        "command": "todoListPro.linkWorkspaceToScope",
-        "title": "TODO: Link Workspace To Shared Project"
-      },
-      {
-        "command": "todoListPro.unlinkWorkspaceScope",
-        "title": "TODO: Unlink Workspace From Shared Project"
-      },
-      {
-        "command": "todoListPro.setStorageWorkspace",
-        "title": "TODO: Use Workspace Storage"
-      },
-      {
-        "command": "todoListPro.setStorageProfile",
-        "title": "TODO: Use Profile Storage"
-      },
-      {
         "command": "todoListPro.refresh",
-        "title": "TODO: Refresh"
+        "title": "Refresh",
+        "icon": {
+          "light": "media/action-refresh-light.svg",
+          "dark": "media/action-refresh-dark.svg"
+        }
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "todoListPro.createList",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@10"
+        },
+        {
+          "command": "todoListPro.configureWorkspaceVisibility",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@20"
+        },
+        {
+          "command": "todoListPro.configureCompletedRetention",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@21"
+        },
+        {
+          "command": "todoListPro.exportAll",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@22"
+        },
+        {
+          "command": "todoListPro.exportSingleList",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@23"
+        },
+        {
+          "command": "todoListPro.configureStorageMode",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@24"
+        },
+        {
+          "command": "todoListPro.shareCurrentList",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@25"
+        },
+        {
+          "command": "todoListPro.openListInEditor",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@26"
+        },
+        {
+          "command": "todoListPro.addSharedList",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@27"
+        },
+        {
+          "command": "todoListPro.syncSharedList",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@28"
+        },
+        {
+          "command": "todoListPro.toggleAutoRefreshSharedLists",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@29"
+        },
+        {
+          "command": "todoListPro.importAll",
+          "when": "view == todoListProView",
+          "group": "todoSecondary@30"
+        },
+        {
+          "command": "todoListPro.refresh",
+          "when": "view == todoListProView",
+          "group": "navigation@1"
+        }
+      ]
+    },
     "configuration": {
       "title": "TODO List Pro",
       "properties": {
-        "todoListPro.defaultStorageMode": {
+        "todoListPro.storageMode": {
           "type": "string",
           "enum": [
-            "workspace",
-            "profile"
+            "local",
+            "github"
           ],
-          "default": "workspace",
-          "description": "Workspace = separate TODOs per project. Profile = shared TODOs synced by VS Code profile sync."
+          "default": "local",
+          "description": "Where TODO lists are stored."
         },
-        "todoListPro.hideCompletedByDefault": {
+        "todoListPro.completedRetentionDays": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "description": "How many days completed TODOs stay before automatic deletion."
+        },
+        "todoListPro.autoRefreshSharedLists": {
           "type": "boolean",
           "default": false,
-          "description": "If true, completed TODOs are hidden by default."
+          "description": "Automatically refresh shared lists every 5 minutes when at least one shared list exists."
         }
       }
     }

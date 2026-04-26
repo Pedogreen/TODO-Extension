@@ -3,8 +3,9 @@
 ## 0.0.1
 
 - Initial public release
-- Nested TODO groups and subgroups
-- Workspace, profile, and shared project lists
-- Transfer block with import/export
-- List drag-and-drop into target folders
-- Auto cleanup for completed TODOs
+- Standalone TODO lists with per-workspace visibility
+- Nested folders with inline quick-add task inputs
+- Native VS Code view menu actions for create/import/export/settings
+- Single-list and full export flows
+- Drag-and-drop for tasks and folders across lists and folders
+- Automatic cleanup for completed TODOs with configurable retention

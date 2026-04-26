@@ -6,3 +6,4 @@ tsconfig.json
 node_modules/**
 mdt-todo-import.json
 tmp_vsix/**
+tmp_vsix2/**
