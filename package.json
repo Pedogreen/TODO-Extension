@@ -2,7 +2,7 @@
   "name": "projects-todo-advanced",
   "displayName": "Projects TODO Advanced",
   "description": "A structured TODO sidebar for VS Code with standalone lists, workspace visibility, drag and drop, and import/export.",
-  "version": "0.0.2",
+  "version": "0.0.3-beta.1",
   "publisher": "greenpedro",
   "icon": "media/store/icon.png",
   "repository": {
@@ -153,69 +153,69 @@
     "menus": {
       "view/title": [
         {
+          "command": "todoListPro.refresh",
+          "when": "view == todoListProView",
+          "group": "navigation@1"
+        },
+        {
           "command": "todoListPro.createList",
           "when": "view == todoListProView",
-          "group": "todoSecondary@10"
-        },
-        {
-          "command": "todoListPro.configureWorkspaceVisibility",
-          "when": "view == todoListProView",
-          "group": "todoSecondary@20"
-        },
-        {
-          "command": "todoListPro.configureCompletedRetention",
-          "when": "view == todoListProView",
-          "group": "todoSecondary@21"
-        },
-        {
-          "command": "todoListPro.exportAll",
-          "when": "view == todoListProView",
-          "group": "todoSecondary@22"
-        },
-        {
-          "command": "todoListPro.exportSingleList",
-          "when": "view == todoListProView",
-          "group": "todoSecondary@23"
-        },
-        {
-          "command": "todoListPro.configureStorageMode",
-          "when": "view == todoListProView",
-          "group": "todoSecondary@24"
-        },
-        {
-          "command": "todoListPro.shareCurrentList",
-          "when": "view == todoListProView",
-          "group": "todoSecondary@25"
+          "group": "navigation@2"
         },
         {
           "command": "todoListPro.openListInEditor",
           "when": "view == todoListProView",
-          "group": "todoSecondary@26"
+          "group": "lists@10"
+        },
+        {
+          "command": "todoListPro.shareCurrentList",
+          "when": "view == todoListProView",
+          "group": "sharing@10"
         },
         {
           "command": "todoListPro.addSharedList",
           "when": "view == todoListProView",
-          "group": "todoSecondary@27"
+          "group": "sharing@20"
         },
         {
           "command": "todoListPro.syncSharedList",
           "when": "view == todoListProView",
-          "group": "todoSecondary@28"
+          "group": "sharing@30"
         },
         {
           "command": "todoListPro.toggleAutoRefreshSharedLists",
           "when": "view == todoListProView",
-          "group": "todoSecondary@29"
+          "group": "sharing@40"
+        },
+        {
+          "command": "todoListPro.exportSingleList",
+          "when": "view == todoListProView",
+          "group": "data@10"
+        },
+        {
+          "command": "todoListPro.exportAll",
+          "when": "view == todoListProView",
+          "group": "data@20"
         },
         {
           "command": "todoListPro.importAll",
           "when": "view == todoListProView",
-          "group": "todoSecondary@30"
+          "group": "data@30"
         },
         {
-          "command": "todoListPro.refresh",
+          "command": "todoListPro.configureWorkspaceVisibility",
           "when": "view == todoListProView",
-          "group": "navigation@1"
+          "group": "settings@10"
+        },
+        {
+          "command": "todoListPro.configureCompletedRetention",
+          "when": "view == todoListProView",
+          "group": "settings@20"
+        },
+        {
+          "command": "todoListPro.configureStorageMode",
+          "when": "view == todoListProView",
+          "group": "settings@30"
         }
       ]
     },
