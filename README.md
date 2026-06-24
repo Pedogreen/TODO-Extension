@@ -14,7 +14,7 @@ It is built for people who want project task management directly in the editor i
 - Import and export all lists or a single list
 - Clean up completed tasks automatically after a configurable retention period
 - Use VS Code native view actions for visibility, retention, import/export, and list creation
-- Keep local storage as the default, or share lists through a normal GitHub repository without deleting the local copy
+- Keep local storage as the default, or sync private lists to a personal GitHub repository and move selected lists into named GitHub workspaces
 
 ## Screenshots
 
@@ -52,15 +52,15 @@ Move tasks or whole folders into another list or nested folder using the drag ha
 
 Set `Completed Retention...` from the native menu to keep completed tasks for `1, 3, 8, 14, 30, or 90` days.
 
-### 6. Keep local data or switch to Share Mode
+### 6. Keep local data or sync to GitHub
 
 Use `Storage Mode...` to choose one of these options:
 
 - Keep local storage
-- Switch to Share Mode
+- Enable GitHub Sync
 - Back to Local Mode
 
-Share Mode uses a central GitHub repository named `TodoExtension` that the extension creates automatically through the signed-in VS Code GitHub account if it does not exist yet. Shared lists are stored as JSON files under `lists/`. The mode switch never deletes or overwrites local data.
+GitHub Sync creates or reuses a private personal repository for your own lists and keeps local data as a safe working copy. Workspace lists are moved into named workspace repositories that the extension creates automatically through the signed-in VS Code GitHub account if needed. The mode switch never deletes or overwrites local data.
 
 ## Native View Menu
 

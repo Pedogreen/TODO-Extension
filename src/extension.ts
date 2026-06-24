@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { storageManager, type SharedListRecord } from "./services/storage";
+import { storageManager, type ManagedRepositoryRecord, type SharedListRecord } from "./services/storage";
+import { githubService } from "./services/github";
 
 type ListId = string;
 type GroupId = string;
@@ -11,6 +12,7 @@ export interface TodoItem {
   text: string;
   done: boolean;
   createdAt: number;
+  author?: string;
   completedAt?: number;
 }
 
@@ -64,6 +66,7 @@ type WebviewAction =
   | { type: "clearFilter" }
   | { type: "toggleShellSection"; shellId: keyof ShellState }
   | { type: "toggleListExpanded"; listId: ListId; source?: ListSource }
+  | { type: "toggleEditorListExpanded"; listId: ListId; source?: ListSource }
   | { type: "addList" }
   | { type: "addGroup"; listId: ListId; groupId?: GroupId; source?: ListSource }
   | { type: "addTodo"; listId: ListId; groupId?: GroupId; source?: ListSource }
@@ -72,18 +75,20 @@ type WebviewAction =
   | { type: "renameGroup"; listId: ListId; groupId: GroupId; source?: ListSource }
   | { type: "renameTodo"; listId: ListId; todoId: TodoId; source?: ListSource }
   | { type: "toggleDone"; listId: ListId; todoId: TodoId; source?: ListSource }
+  | { type: "toggleGroupExpanded"; listId: ListId; groupId: GroupId; source?: ListSource; open: boolean }
   | { type: "deleteTodo"; listId: ListId; todoId: TodoId; source?: ListSource }
   | { type: "deleteGroup"; listId: ListId; groupId: GroupId; source?: ListSource }
   | { type: "deleteList"; listId: ListId; source?: ListSource }
   | { type: "exportAll" }
   | { type: "exportList"; listId: ListId }
   | { type: "importData" }
-  | { type: "moveTodo"; sourceListId: ListId; todoId: TodoId; targetListId: ListId; targetGroupId?: GroupId; source?: ListSource }
-  | { type: "moveGroup"; sourceListId: ListId; groupId: GroupId; targetListId: ListId; targetGroupId?: GroupId; source?: ListSource }
+  | { type: "moveTodo"; sourceListId: ListId; todoId: TodoId; targetListId: ListId; targetGroupId?: GroupId; source?: ListSource; targetSource?: ListSource }
+  | { type: "moveGroup"; sourceListId: ListId; groupId: GroupId; targetListId: ListId; targetGroupId?: GroupId; source?: ListSource; targetSource?: ListSource }
   | { type: "refresh" }
   | { type: "shareCurrentList"; listId?: ListId; source?: ListSource }
   | { type: "openListInEditor"; listId: ListId; source?: ListSource }
   | { type: "copyShareKey"; listId: ListId; source?: ListSource }
+  | { type: "inviteUserToWorkspace"; workspaceOwner?: string; workspaceRepo?: string }
   | { type: "addSharedList" }
   | { type: "copyLocalListToShareMode" }
   | { type: "syncSharedList"; listId?: ListId; source?: ListSource };
@@ -96,7 +101,11 @@ interface RenderedList {
   createdAt: number;
   store: TodoStore;
   record?: SharedListRecord;
-  sharedBadge?: string;
+}
+
+interface FilterableList {
+  name: string;
+  store: TodoStore;
 }
 
 class TodoState {
@@ -105,6 +114,7 @@ class TodoState {
   private static readonly VISIBLE_LIST_IDS_KEY = "todoListPro.ui.visibleListIds";
   private static readonly EXPANDED_LIST_ID_KEY = "todoListPro.ui.expandedListId";
   private static readonly SHELL_STATE_KEY = "todoListPro.ui.shellState";
+  private static readonly GROUP_STATE_KEY = "todoListPro.ui.groupState";
   private static readonly LEGACY_WORKSPACE_KEY = "todoListPro.store.workspace";
   private static readonly LEGACY_PROFILE_KEY = "todoListPro.store.profile";
   private static readonly LEGACY_SCOPE_REGISTRY_KEY = "todoListPro.workspaceScopes";
@@ -168,6 +178,7 @@ class TodoState {
       TodoState.VISIBLE_LIST_IDS_KEY,
       this.readVisibleListIds().filter((id) => id !== listId)
     );
+    await this.removeGroupState(listId);
     if (this.readExpandedListId() === listId) {
       await this.context.workspaceState.update(TodoState.EXPANDED_LIST_ID_KEY, undefined);
     }
@@ -256,6 +267,41 @@ class TodoState {
     await this.ensureInitialized();
   }
 
+  public async replaceLists(lists: TodoList[]): Promise<void> {
+    const expanded = this.readExpandedListId();
+    await this.writeLists(lists);
+    await this.context.workspaceState.update(
+      TodoState.VISIBLE_LIST_IDS_KEY,
+      lists.map((list) => list.id)
+    );
+    await this.context.workspaceState.update(
+      TodoState.EXPANDED_LIST_ID_KEY,
+      expanded && lists.some((list) => list.id === expanded) ? expanded : lists[0]?.id
+    );
+    await this.pruneGroupState(new Set(lists.map((list) => list.id)));
+  }
+
+  public isGroupCollapsed(listId: ListId, groupId: GroupId): boolean {
+    return Boolean(this.readGroupState()[listId]?.[groupId]);
+  }
+
+  public async setGroupCollapsed(listId: ListId, groupId: GroupId, collapsed: boolean): Promise<void> {
+    const current = this.readGroupState();
+    const next = { ...current };
+    const listState = { ...(next[listId] ?? {}) };
+    if (collapsed) {
+      listState[groupId] = true;
+    } else {
+      delete listState[groupId];
+    }
+    if (Object.keys(listState).length === 0) {
+      delete next[listId];
+    } else {
+      next[listId] = listState;
+    }
+    await this.context.workspaceState.update(TodoState.GROUP_STATE_KEY, next);
+  }
+
   private async initialize(): Promise<void> {
     const current = this.context.globalState.get<TodoList[] | undefined>(TodoState.LISTS_KEY);
     if (!current) {
@@ -277,6 +323,28 @@ class TodoState {
       );
     }
     await this.ensureExpandedListIsValid();
+  }
+
+  private readGroupState(): Record<string, Record<string, boolean>> {
+    return this.context.workspaceState.get<Record<string, Record<string, boolean>> | undefined>(TodoState.GROUP_STATE_KEY) ?? {};
+  }
+
+  private async removeGroupState(listId: ListId): Promise<void> {
+    const current = this.readGroupState();
+    if (!current[listId]) {
+      return;
+    }
+    const next = { ...current };
+    delete next[listId];
+    await this.context.workspaceState.update(TodoState.GROUP_STATE_KEY, next);
+  }
+
+  private async pruneGroupState(validListIds: Set<string>): Promise<void> {
+    const current = this.readGroupState();
+    const next = Object.fromEntries(
+      Object.entries(current).filter(([listId]) => validListIds.has(listId))
+    );
+    await this.context.workspaceState.update(TodoState.GROUP_STATE_KEY, next);
   }
 
   private readLists(): TodoList[] {
@@ -344,6 +412,7 @@ class TodoState {
       text: typeof todo?.text === "string" ? todo.text : "",
       done: Boolean(todo?.done),
       createdAt: typeof todo?.createdAt === "number" ? todo.createdAt : Date.now(),
+      author: typeof todo?.author === "string" && todo.author.trim() ? todo.author.trim() : undefined,
       completedAt: typeof todo?.completedAt === "number" ? todo.completedAt : undefined
     }));
   }
@@ -357,9 +426,19 @@ class TodoController implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private editorPanel?: vscode.WebviewPanel;
   private editorTarget?: { listId: ListId; source: ListSource };
+  private editorExpanded = true;
   private sharedListsCache: SharedListRecord[] = [];
+  private workspaceReposCache: ManagedRepositoryRecord[] = [];
+  private personalSyncTimer?: NodeJS.Timeout;
+  private workspaceSyncTimers = new Map<string, NodeJS.Timeout>();
   private autoRefreshTimer?: NodeJS.Timeout;
+  private filterSyncTimer?: NodeJS.Timeout;
+  private pendingFilterValue = "";
+  private searchCollapsedListIds = new Set<ListId>();
   private autoRefreshEnabled = vscode.workspace.getConfiguration("todoListPro").get<boolean>("autoRefreshSharedLists", false);
+  private todoAuthorLabel = "Local";
+  private lastViewHtml = "";
+  private lastEditorHtml = "";
   private readonly autoRefreshIntervalMs = 5 * 60 * 1000;
 
   public constructor(
@@ -379,18 +458,201 @@ class TodoController implements vscode.WebviewViewProvider {
     void this.refresh();
   }
 
-  public async refresh(): Promise<void> {
+  public async refresh(showToast = false): Promise<void> {
+    const previouslyExpanded = this.state.readExpandedListId();
+    await this.flushPendingSyncs();
     await this.state.ensureInitialized();
     await this.cleanupExpiredCompletedTodos();
-    await storageManager.sync();
-    this.sharedListsCache = await storageManager.listSharedLists();
+    await this.refreshTodoAuthorLabel();
+    if (storageManager.getStorageMode() === "github") {
+      try {
+        const localLists = this.state.listLists();
+        const personal = await storageManager.findPersonalRepository();
+        const personalLists = personal ? await storageManager.listRepositoryLists(personal) : [];
+        if (personalLists.length === 0 && localLists.length > 0) {
+          for (const list of localLists) {
+            await storageManager.savePersonalList(list);
+          }
+          const bootstrapped = await storageManager.listPersonalLists();
+          await this.state.replaceLists(bootstrapped.map((record) => record.snapshot));
+        } else {
+          await this.state.replaceLists(personalLists.map((record) => record.snapshot));
+        }
+      } catch (error) {
+        void vscode.window.showWarningMessage(error instanceof Error ? error.message : "Personal repository sync failed.");
+      }
+    }
+
+    this.workspaceReposCache = await storageManager.discoverManagedRepositories().then((repos) => repos.filter((repo) => repo.kind === "workspace"));
+    this.sharedListsCache = await storageManager.listWorkspaceLists();
+    if (
+      previouslyExpanded &&
+      (this.state.getList(previouslyExpanded) ||
+        this.sharedListsCache.some((record) => record.id === previouslyExpanded || record.listId === previouslyExpanded))
+    ) {
+      await this.state.setExpandedListId(previouslyExpanded);
+    }
+    if (storageManager.getStorageMode() === "local" && this.workspaceReposCache.length > 0) {
+      await storageManager.switchToHybrid();
+    }
     this.updateAutoRefreshTimer();
+    this.renderCurrentView();
+    if (showToast) {
+      void vscode.window.showInformationMessage("TODO list view refreshed.");
+    }
+  }
+
+  private async refreshTodoAuthorLabel(): Promise<void> {
+    try {
+      const user = await githubService.getCurrentUser();
+      this.todoAuthorLabel = user?.login?.trim() ? user.login.trim() : "Local";
+    } catch {
+      this.todoAuthorLabel = "Local";
+    }
+  }
+
+  private renderCurrentView(): void {
     if (this.view) {
-      this.view.webview.html = this.renderHtml();
+      const html = this.renderHtml();
+      if (html !== this.lastViewHtml) {
+        this.lastViewHtml = html;
+        this.view.webview.html = html;
+      }
     }
     if (this.editorPanel) {
-      this.editorPanel.webview.html = this.renderEditorHtml();
+      const html = this.renderEditorHtml();
+      if (html !== this.lastEditorHtml) {
+        this.lastEditorHtml = html;
+        this.editorPanel.webview.html = html;
+      }
     }
+  }
+
+  private schedulePersonalSync(): void {
+    if (this.personalSyncTimer) {
+      clearTimeout(this.personalSyncTimer);
+    }
+    this.personalSyncTimer = setTimeout(() => {
+      void this.flushPersonalSync();
+    }, 350);
+  }
+
+  private scheduleWorkspaceSync(recordId: string): void {
+    const existing = this.workspaceSyncTimers.get(recordId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      void this.flushWorkspaceSync(recordId);
+    }, 350);
+    this.workspaceSyncTimers.set(recordId, timer);
+  }
+
+  private cancelPersonalSync(): void {
+    if (this.personalSyncTimer) {
+      clearTimeout(this.personalSyncTimer);
+      this.personalSyncTimer = undefined;
+    }
+  }
+
+  private cancelWorkspaceSync(recordId: string): void {
+    const timer = this.workspaceSyncTimers.get(recordId);
+    if (timer) {
+      clearTimeout(timer);
+      this.workspaceSyncTimers.delete(recordId);
+    }
+  }
+
+  private async flushPendingSyncs(): Promise<void> {
+    if (this.personalSyncTimer) {
+      clearTimeout(this.personalSyncTimer);
+      this.personalSyncTimer = undefined;
+      await this.flushPersonalSync();
+    }
+    for (const [recordId, timer] of this.workspaceSyncTimers.entries()) {
+      clearTimeout(timer);
+      this.workspaceSyncTimers.delete(recordId);
+      await this.flushWorkspaceSync(recordId);
+    }
+  }
+
+  private async flushPersonalSync(): Promise<void> {
+    if (storageManager.getStorageMode() !== "github") {
+      return;
+    }
+    const personal = await storageManager.findPersonalRepository().catch(() => undefined);
+    if (!personal) {
+      return;
+    }
+    for (const list of this.state.listLists()) {
+      await storageManager.saveRepositoryList(personal, list);
+    }
+  }
+
+  private async flushWorkspaceSync(recordId: string): Promise<void> {
+    const record = this.getSharedRecord(recordId);
+    if (!record) {
+      return;
+    }
+    const workspace = this.workspaceReposCache.find((repo) => repo.target.owner === record.target.owner && repo.target.repo === record.target.repo)
+      ?? {
+        kind: "workspace" as const,
+        name: record.target.repo,
+        description: undefined,
+        target: record.target
+      };
+    const saved = await storageManager.saveRepositorySnapshot(
+      workspace,
+      record.snapshot,
+      record.sha
+    );
+    record.sha = saved.sha;
+    record.snapshot = saved.snapshot;
+    record.listName = saved.listName;
+    record.lastSyncedAt = Date.now();
+    this.renderCurrentView();
+  }
+
+  private async finishPrivateMutation(): Promise<void> {
+    if (storageManager.getStorageMode() === "github") {
+      this.schedulePersonalSync();
+      this.renderCurrentView();
+      return;
+    }
+    await this.refresh();
+  }
+
+  private async finishWorkspaceMutation(recordId: string): Promise<void> {
+    this.scheduleWorkspaceSync(recordId);
+    this.renderCurrentView();
+  }
+
+  private async mutateWorkspaceRecord(
+    recordId: string,
+    updater: (list: TodoList) => void,
+    options?: { expand?: boolean }
+  ): Promise<void> {
+    const record = this.getSharedRecord(recordId);
+    if (!record) {
+      return;
+    }
+
+    const next: TodoList = {
+      ...record.snapshot,
+      store: this.cloneStore(record.snapshot.store)
+    };
+    updater(next);
+    next.store = this.normalizeStore(next.store);
+    record.snapshot = next;
+    record.listName = next.name;
+    if (options?.expand !== false) {
+      await this.state.setExpandedListId(record.id);
+    }
+    await this.finishWorkspaceMutation(record.id);
+  }
+
+  private async setGroupExpandedState(listId: ListId, groupId: GroupId, open: boolean): Promise<void> {
+    await this.state.setGroupCollapsed(listId, groupId, !open);
   }
 
   public async addList(): Promise<void> {
@@ -400,7 +662,7 @@ class TodoController implements vscode.WebviewViewProvider {
     }
     const list = await this.state.createList(name);
     await this.state.setExpandedListId(list.id);
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async addGroup(listId: ListId, groupId?: GroupId, source: ListSource = "local"): Promise<void> {
@@ -417,7 +679,7 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!name?.trim()) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (target) => {
+      await this.mutateWorkspaceRecord(record.id, (target) => {
         const next: TodoGroup = { id: this.newId("group"), name: name.trim(), groups: [], todos: [] };
         if (groupId) {
           const current = this.findGroupById(target.store.groups, groupId);
@@ -428,8 +690,6 @@ class TodoController implements vscode.WebviewViewProvider {
           target.store.groups.push(next);
         }
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -458,7 +718,7 @@ class TodoController implements vscode.WebviewViewProvider {
     });
     await this.state.ensureListVisible(listId);
     await this.state.setExpandedListId(listId);
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async addTodo(listId: ListId, groupId?: GroupId, source: ListSource = "local"): Promise<void> {
@@ -467,6 +727,7 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!record) {
         return;
       }
+      await this.refreshTodoAuthorLabel();
       const group = groupId ? this.findGroupById(record.snapshot.store.groups, groupId) : undefined;
       const text = await vscode.window.showInputBox({
         prompt: group ? `TODO text in "${group.name}"` : `TODO text in "${record.listName}"`,
@@ -475,8 +736,8 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!text?.trim()) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (target) => {
-        const todo: TodoItem = { id: this.newId("todo"), text: text.trim(), done: false, createdAt: Date.now() };
+      await this.mutateWorkspaceRecord(record.id, (target) => {
+        const todo: TodoItem = { id: this.newId("todo"), text: text.trim(), done: false, createdAt: Date.now(), author: this.todoAuthorLabel };
         if (groupId) {
           const current = this.findGroupById(target.store.groups, groupId);
           if (current) {
@@ -486,8 +747,6 @@ class TodoController implements vscode.WebviewViewProvider {
           target.store.todos.push(todo);
         }
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -495,6 +754,7 @@ class TodoController implements vscode.WebviewViewProvider {
     if (!list) {
       return;
     }
+    await this.refreshTodoAuthorLabel();
     const group = groupId ? this.findGroupById(list.store.groups, groupId) : undefined;
     const text = await vscode.window.showInputBox({
       prompt: group ? `TODO text in "${group.name}"` : `TODO text in "${list.name}"`,
@@ -504,7 +764,7 @@ class TodoController implements vscode.WebviewViewProvider {
       return;
     }
     await this.state.updateList(listId, (target) => {
-      const todo: TodoItem = { id: this.newId("todo"), text: text.trim(), done: false, createdAt: Date.now() };
+      const todo: TodoItem = { id: this.newId("todo"), text: text.trim(), done: false, createdAt: Date.now(), author: this.todoAuthorLabel };
       if (groupId) {
         const current = this.findGroupById(target.store.groups, groupId);
         if (current) {
@@ -516,7 +776,7 @@ class TodoController implements vscode.WebviewViewProvider {
     });
     await this.state.ensureListVisible(listId);
     await this.state.setExpandedListId(listId);
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async quickAddTodo(listId: ListId, text: string, groupId?: GroupId, source: ListSource = "local"): Promise<void> {
@@ -530,8 +790,9 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!record) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (target) => {
-        const todo: TodoItem = { id: this.newId("todo"), text: value, done: false, createdAt: Date.now() };
+      await this.refreshTodoAuthorLabel();
+      await this.mutateWorkspaceRecord(record.id, (target) => {
+        const todo: TodoItem = { id: this.newId("todo"), text: value, done: false, createdAt: Date.now(), author: this.todoAuthorLabel };
         if (groupId) {
           const current = this.findGroupById(target.store.groups, groupId);
           if (current) {
@@ -541,8 +802,6 @@ class TodoController implements vscode.WebviewViewProvider {
           target.store.todos.push(todo);
         }
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -550,9 +809,10 @@ class TodoController implements vscode.WebviewViewProvider {
     if (!list) {
       return;
     }
+    await this.refreshTodoAuthorLabel();
 
     await this.state.updateList(listId, (target) => {
-      const todo: TodoItem = { id: this.newId("todo"), text: value, done: false, createdAt: Date.now() };
+      const todo: TodoItem = { id: this.newId("todo"), text: value, done: false, createdAt: Date.now(), author: this.todoAuthorLabel };
       if (groupId) {
         const current = this.findGroupById(target.store.groups, groupId);
         if (current) {
@@ -564,7 +824,7 @@ class TodoController implements vscode.WebviewViewProvider {
     });
     await this.state.ensureListVisible(listId);
     await this.state.setExpandedListId(listId);
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async renameList(listId: ListId, source: ListSource = "local"): Promise<void> {
@@ -581,11 +841,9 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!name?.trim() || name.trim() === record.listName) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (target) => {
+      await this.mutateWorkspaceRecord(record.id, (target) => {
         target.name = name.trim();
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -604,7 +862,7 @@ class TodoController implements vscode.WebviewViewProvider {
     await this.state.updateList(listId, (target) => {
       target.name = name.trim();
     });
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async renameGroup(listId: ListId, groupId: GroupId, source: ListSource = "local"): Promise<void> {
@@ -625,14 +883,12 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!name?.trim() || name.trim() === group.name) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (target) => {
+      await this.mutateWorkspaceRecord(record.id, (target) => {
         const current = this.findGroupById(target.store.groups, groupId);
         if (current) {
           current.name = name.trim();
         }
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -655,7 +911,7 @@ class TodoController implements vscode.WebviewViewProvider {
         current.name = name.trim();
       }
     });
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async renameTodo(listId: ListId, todoId: TodoId, source: ListSource = "local"): Promise<void> {
@@ -676,14 +932,12 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!text?.trim() || text.trim() === todo.text) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (target) => {
+      await this.mutateWorkspaceRecord(record.id, (target) => {
         const current = this.findTodo(target.store, todoId);
         if (current) {
           current.text = text.trim();
         }
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -706,16 +960,33 @@ class TodoController implements vscode.WebviewViewProvider {
         current.text = text.trim();
       }
     });
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async setFilter(value: string): Promise<void> {
-    await this.state.setFilter(value);
-    await this.refresh();
+    this.pendingFilterValue = value.trim();
+    if (this.filterSyncTimer) {
+      clearTimeout(this.filterSyncTimer);
+    }
+    this.filterSyncTimer = setTimeout(() => {
+      void this.commitFilter();
+    }, 220);
   }
 
   public async clearFilter(): Promise<void> {
     await this.setFilter("");
+  }
+
+  private async commitFilter(): Promise<void> {
+    if (this.filterSyncTimer) {
+      clearTimeout(this.filterSyncTimer);
+      this.filterSyncTimer = undefined;
+    }
+    await this.state.setFilter(this.pendingFilterValue);
+    if (!this.pendingFilterValue.trim()) {
+      this.searchCollapsedListIds.clear();
+    }
+    this.renderCurrentView();
   }
 
   public async toggleDone(listId: ListId, todoId: TodoId, source: ListSource = "local"): Promise<void> {
@@ -724,15 +995,13 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!record) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (list) => {
+      await this.mutateWorkspaceRecord(record.id, (list) => {
         const todo = this.findTodo(list.store, todoId);
         if (todo) {
           todo.done = !todo.done;
           todo.completedAt = todo.done ? Date.now() : undefined;
         }
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -743,7 +1012,7 @@ class TodoController implements vscode.WebviewViewProvider {
         todo.completedAt = todo.done ? Date.now() : undefined;
       }
     });
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async deleteTodo(listId: ListId, todoId: TodoId, source: ListSource = "local"): Promise<void> {
@@ -752,18 +1021,16 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!record) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (list) => {
+      await this.mutateWorkspaceRecord(record.id, (list) => {
         this.removeTodo(list.store, todoId);
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
     await this.state.updateList(listId, (list) => {
       this.removeTodo(list.store, todoId);
     });
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async deleteGroup(listId: ListId, groupId: GroupId, source: ListSource = "local"): Promise<void> {
@@ -772,18 +1039,16 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!record) {
         return;
       }
-      await storageManager.saveSharedList(record.id, (list) => {
+      await this.mutateWorkspaceRecord(record.id, (list) => {
         this.removeGroup(list.store.groups, groupId);
       });
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
     await this.state.updateList(listId, (list) => {
       this.removeGroup(list.store.groups, groupId);
     });
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async deleteList(listId: ListId, source: ListSource = "local"): Promise<void> {
@@ -792,38 +1057,31 @@ class TodoController implements vscode.WebviewViewProvider {
       if (!record) {
         return;
       }
+      this.cancelWorkspaceSync(record.id);
       const picked = await vscode.window.showWarningMessage(
-        `Shared list "${record.listName}" is backed by a GitHub repository. Remove only this local copy to hide it from this workspace, or delete the remote JSON to remove it for everyone with access.`,
+        `Delete workspace list "${record.listName}"? This will remove the remote JSON from ${record.target.owner}/${record.target.repo} and the local workspace entry.`,
         { modal: true },
-        "Delete local copy",
-        "Delete remote list",
-        "Cancel"
+        "Delete remote list"
       );
-
-      if (picked === "Delete local copy") {
-        await storageManager.deleteSharedList(record.id);
-        await this.reloadSharedLists();
-        await this.refresh();
-        return;
-      }
 
       if (picked !== "Delete remote list") {
         return;
       }
 
-      const confirmRemote = await vscode.window.showWarningMessage(
-        `This will permanently delete "${record.listName}" from GitHub repository ${record.target.owner}/${record.target.repo} on branch ${record.target.branch}. Continue?`,
-        { modal: true },
-        "Delete remote list",
-        "Cancel"
-      );
-      if (confirmRemote !== "Delete remote list") {
-        return;
+      try {
+        const workspace = this.workspaceReposCache.find((repo) => repo.target.owner === record.target.owner && repo.target.repo === record.target.repo)
+          ?? {
+            kind: "workspace" as const,
+            name: record.target.repo,
+            description: undefined,
+            target: record.target
+          };
+        await storageManager.deleteRepositoryList(workspace, record.listId);
+        await this.refresh();
+        void vscode.window.showInformationMessage(`Deleted workspace list "${record.listName}".`);
+      } catch (error) {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to delete workspace list.");
       }
-
-      await storageManager.deleteRemoteSharedList(record.id);
-      await this.reloadSharedLists();
-      await this.refresh();
       return;
     }
 
@@ -835,14 +1093,29 @@ class TodoController implements vscode.WebviewViewProvider {
     if (confirm !== "Delete") {
       return;
     }
+    if (storageManager.getStorageMode() === "github") {
+      this.cancelPersonalSync();
+      await storageManager.deletePersonalListIfExists(listId).catch(() => undefined);
+    }
     await this.state.deleteList(listId);
     await this.state.ensureExpandedListIsValid();
-    await this.refresh();
+    await this.finishPrivateMutation();
   }
 
   public async toggleListExpanded(listId: ListId): Promise<void> {
+    const filter = this.state.readFilter().trim();
+    if (filter) {
+      if (this.searchCollapsedListIds.has(listId)) {
+        this.searchCollapsedListIds.delete(listId);
+      } else {
+        this.searchCollapsedListIds.add(listId);
+      }
+      this.renderCurrentView();
+      return;
+    }
+
     await this.state.setExpandedListId(this.state.readExpandedListId() === listId ? undefined : listId);
-    await this.refresh();
+    this.renderCurrentView();
   }
 
   public async toggleListVisibility(listId: ListId): Promise<void> {
@@ -860,8 +1133,28 @@ class TodoController implements vscode.WebviewViewProvider {
   }
 
   private async reloadSharedLists(): Promise<void> {
-    this.sharedListsCache = await storageManager.listSharedLists();
+    this.workspaceReposCache = await storageManager.discoverManagedRepositories().then((repos) => repos.filter((repo) => repo.kind === "workspace"));
+    this.sharedListsCache = await storageManager.listWorkspaceLists();
     this.updateAutoRefreshTimer();
+  }
+
+  private async syncPersonalRepositoryFromLocal(): Promise<void> {
+    if (storageManager.getStorageMode() !== "github") {
+      return;
+    }
+
+    const localLists = this.state.listLists();
+    const localIds = new Set(localLists.map((list) => list.id));
+    const remoteLists = await storageManager.listPersonalLists().catch(() => []);
+
+    if (localLists.length === 0 && remoteLists.length > 0) {
+      await this.state.replaceLists(remoteLists.map((record) => record.snapshot));
+      return;
+    }
+
+    for (const list of localLists) {
+      await storageManager.savePersonalList(list);
+    }
   }
 
   private updateAutoRefreshTimer(): void {
@@ -901,7 +1194,7 @@ class TodoController implements vscode.WebviewViewProvider {
 
   private async pickSharedList(): Promise<SharedListRecord | undefined> {
     if (this.sharedListsCache.length === 0) {
-      void vscode.window.showInformationMessage("Add a shared list first.");
+      void vscode.window.showInformationMessage("Add a workspace first.");
       return undefined;
     }
     const picked = await vscode.window.showQuickPick(
@@ -910,9 +1203,77 @@ class TodoController implements vscode.WebviewViewProvider {
         description: `${record.target.owner}/${record.target.repo}#${record.target.branch}`,
         record
       })),
-      { title: "Select shared list" }
+      { title: "Select workspace list" }
     );
     return picked?.record;
+  }
+
+  private async pickWorkspaceRepository(): Promise<ManagedRepositoryRecord | undefined> {
+    const repositories = await storageManager.discoverManagedRepositories();
+    const workspaces = repositories.filter((repo) => repo.kind === "workspace");
+    const options = [
+      ...workspaces.map((repo) => ({
+        label: repo.name,
+        description: `${repo.target.owner}/${repo.target.repo}`,
+        repo
+      })),
+      {
+        label: "Create new workspace",
+        description: "Create a new GitHub repository for a workspace",
+        repo: undefined as ManagedRepositoryRecord | undefined
+      }
+    ];
+
+    const picked = await vscode.window.showQuickPick(options, {
+      title: "Select workspace",
+      placeHolder: "Choose an existing workspace or create a new one"
+    });
+
+    if (!picked) {
+      return undefined;
+    }
+
+    if (picked.repo) {
+      return picked.repo;
+    }
+
+    const workspaceName = await vscode.window.showInputBox({
+      prompt: "Workspace name",
+      placeHolder: "e.g. Team Alpha"
+    });
+    if (!workspaceName?.trim()) {
+      return undefined;
+    }
+
+    return storageManager.ensureWorkspaceRepository(workspaceName.trim());
+  }
+
+  private async pickLocalListsToMove(preselectedId?: ListId): Promise<TodoList[] | undefined> {
+    const lists = this.state.listLists();
+    if (lists.length === 0) {
+      void vscode.window.showInformationMessage("Create a private list first.");
+      return undefined;
+    }
+
+    const picked = await vscode.window.showQuickPick(
+      lists.map((list) => ({
+        label: list.name,
+        picked: preselectedId === list.id,
+        description: `${list.store.groups.length} folders | ${this.countVisibleTodos(list.store, "")} tasks`,
+        list
+      })),
+      {
+        title: "Move lists to workspace",
+        canPickMany: true,
+        placeHolder: "Select one or more lists to move"
+      }
+    );
+
+    if (!picked || picked.length === 0) {
+      return undefined;
+    }
+
+    return picked.map((item) => item.list);
   }
 
   public async configureWorkspaceVisibility(): Promise<void> {
@@ -985,8 +1346,13 @@ class TodoController implements vscode.WebviewViewProvider {
           mode: "local" as const
         },
         {
-          label: "Switch to Share Mode",
-          description: "Keeps local data untouched and enables shared list workflows.",
+          label: currentMode === "hybrid" ? "Hybrid mode enabled" : "Switch to Hybrid Mode",
+          description: "Use local lists alongside workspace repositories. Private lists stay local.",
+          mode: "hybrid" as const
+        },
+        {
+          label: currentMode === "github" ? "Full GitHub storage enabled" : "Switch to Full GitHub Storage",
+          description: "Creates a backup and moves your private lists into your personal GitHub repository.",
           mode: "github-switch" as const
         }
       ],
@@ -1007,35 +1373,58 @@ class TodoController implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (picked.mode === "hybrid") {
+      await storageManager.switchToHybrid();
+      await this.refresh();
+      void vscode.window.showInformationMessage("Hybrid mode is active. Workspace repositories can be used alongside local lists.");
+      return;
+    }
+
     if (picked.mode === "github-switch") {
       try {
-        await storageManager.switchToShare();
+        const backup = await storageManager.switchToGitHubFull();
         await this.refresh();
-        void vscode.window.showInformationMessage("Share Mode is active. Local data was preserved.");
+        void vscode.window.showInformationMessage(`Full GitHub storage is active. Local backup created at ${backup.fsPath}.`);
       } catch (error) {
-        void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to initialize Share Mode.");
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to initialize GitHub sync.");
       }
       return;
     }
   }
 
   public async shareCurrentList(listId?: ListId): Promise<void> {
-    const list = await this.pickLocalList(listId);
-    if (!list) {
+    const selected = listId ? [this.state.getList(listId)].filter((item): item is TodoList => Boolean(item)) : await this.pickLocalListsToMove();
+    if (!selected || selected.length === 0) {
       return;
     }
 
     try {
-      const record = await storageManager.shareLocalList(list);
-      const target = record.target;
-      const shareKey = storageManager.createShareKey(target, record.listId, record.listName);
-      await vscode.env.clipboard.writeText(shareKey);
+      const workspace = await this.pickWorkspaceRepository();
+      if (!workspace) {
+        return;
+      }
+
+      this.cancelPersonalSync();
+      for (const list of selected) {
+        await storageManager.saveRepositoryList(workspace, list);
+        await this.state.deleteList(list.id);
+        await storageManager.deletePersonalListIfExists(list.id).catch(() => undefined);
+      }
+
       await this.reloadSharedLists();
-      await this.state.setExpandedListId(record.id);
+      if (storageManager.getStorageMode() === "local") {
+        await storageManager.switchToHybrid();
+      }
+      await this.state.ensureExpandedListIsValid();
       await this.refresh();
-      void vscode.window.showInformationMessage(`Share key was copied to clipboard. Shared "${record.listName}" to ${target.owner}/${target.repo}.`);
+      this.schedulePersonalSync();
+      void vscode.window.showInformationMessage(
+        selected.length === 1
+          ? `Moved "${selected[0].name}" to workspace "${workspace.name}".`
+          : `Moved ${selected.length} lists to workspace "${workspace.name}".`
+      );
     } catch (error) {
-      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to share list.");
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to move list to workspace.");
     }
   }
 
@@ -1043,7 +1432,7 @@ class TodoController implements vscode.WebviewViewProvider {
     const target = source === "shared" ? this.getSharedRecord(listId ?? "") : this.state.getList(listId ?? "");
     if (!target) {
       if (source === "shared") {
-        void vscode.window.showInformationMessage("Open a shared list first.");
+        void vscode.window.showInformationMessage("Open a workspace list first.");
       } else {
         void vscode.window.showInformationMessage("Select a local list first.");
       }
@@ -1051,6 +1440,7 @@ class TodoController implements vscode.WebviewViewProvider {
     }
 
     this.editorTarget = { listId: listId ?? target.id, source };
+    this.editorExpanded = true;
     const title = source === "shared" ? `Shared: ${(target as SharedListRecord).listName}` : (target as TodoList).name;
     const panel = vscode.window.createWebviewPanel(
       "todoListProEditor",
@@ -1079,30 +1469,97 @@ class TodoController implements vscode.WebviewViewProvider {
     panel.webview.html = this.renderEditorHtml();
   }
 
+  public async pickListForEditor(): Promise<{ listId: ListId; source: ListSource } | undefined> {
+    await this.state.ensureInitialized();
+    if (this.sharedListsCache.length === 0 && this.state.listLists().length === 0) {
+      void vscode.window.showInformationMessage("Create a list first.");
+      return undefined;
+    }
+
+    const options = [
+      ...this.state.listLists().map((list) => ({
+        label: list.name,
+        description: "Private list",
+        listId: list.id,
+        source: "local" as const
+      })),
+      ...this.sharedListsCache.map((record) => ({
+        label: record.listName,
+        description: `${record.target.owner}/${record.target.repo} · Workspace list`,
+        listId: record.id,
+        source: "shared" as const
+      }))
+    ];
+
+    const picked = await vscode.window.showQuickPick(options, {
+      title: "Open List in Editor",
+      placeHolder: "Choose a private or workspace list"
+    });
+    if (!picked) {
+      return undefined;
+    }
+
+    return { listId: picked.listId, source: picked.source };
+  }
+
   public async copyShareKey(listId: ListId, source: ListSource = "shared"): Promise<void> {
-    if (source === "shared") {
-      const record = this.getSharedRecord(listId);
-      if (!record) {
-        return;
-      }
-      const shareKey = storageManager.createShareKey(record.target, record.listId, record.listName);
-      await vscode.env.clipboard.writeText(shareKey);
-      void vscode.window.showInformationMessage(`Share key copied to clipboard for "${record.listName}".`);
+    void vscode.window.showInformationMessage("Workspace links are no longer used in the main workflow.");
+  }
+
+  public async inviteUserToWorkspace(workspaceOwner?: string, workspaceRepo?: string): Promise<void> {
+    const workspace = workspaceOwner && workspaceRepo
+      ? (await storageManager.discoverManagedRepositories()).find((repo) => repo.target.owner === workspaceOwner && repo.target.repo === workspaceRepo)
+      : await this.pickWorkspaceRepository();
+    if (!workspace) {
       return;
     }
 
-    const list = this.state.getList(listId);
-    if (!list) {
+      const username = await vscode.window.showInputBox({
+        prompt: "GitHub username to invite",
+        placeHolder: "e.g. octocat"
+      });
+    if (!username?.trim()) {
       return;
     }
-    const record = this.sharedListsCache.find((item) => item.listId === list.id);
-    if (!record) {
-      void vscode.window.showInformationMessage("Share the list first to copy its share key.");
-      return;
+
+    try {
+      await storageManager.inviteCollaborator(workspace, username.trim());
+      void vscode.window.showInformationMessage(`Invitation sent to ${username.trim()} for workspace "${workspace.name}".`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to invite collaborator.");
     }
-    const shareKey = storageManager.createShareKey(record.target, record.listId, record.listName);
-    await vscode.env.clipboard.writeText(shareKey);
-    void vscode.window.showInformationMessage(`Share key copied to clipboard for "${record.listName}".`);
+  }
+
+  public async acceptRepositoryInvitation(): Promise<void> {
+    try {
+      const invitations = await storageManager.listCurrentUserInvitations();
+      if (invitations.length === 0) {
+        void vscode.window.showInformationMessage("No pending GitHub invitations were found.");
+        return;
+      }
+
+      const picked = await vscode.window.showQuickPick(
+        invitations.map((invitation) => ({
+          label: invitation.repository.full_name,
+          description: invitation.repository.description ?? invitation.permissions ?? "workspace invitation",
+          invitation
+        })),
+        {
+          title: "Accept repository invitation",
+          placeHolder: "Select an invitation to accept"
+        }
+      );
+
+      if (!picked) {
+        return;
+      }
+
+      await storageManager.acceptInvitation(picked.invitation.id);
+      await this.refresh();
+      void vscode.window.showInformationMessage(`Accepted invitation for ${picked.invitation.repository.full_name}.`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to accept invitation.");
+    }
   }
 
   public async copyLocalListToShareMode(): Promise<void> {
@@ -1111,8 +1568,8 @@ class TodoController implements vscode.WebviewViewProvider {
 
   public async addSharedList(): Promise<void> {
     const shareKey = await vscode.window.showInputBox({
-      prompt: "Paste share key",
-      placeHolder: "todo-share://..."
+      prompt: "Paste workspace link",
+      placeHolder: "todo-workspace://..."
     });
     if (!shareKey?.trim()) {
       return;
@@ -1125,7 +1582,7 @@ class TodoController implements vscode.WebviewViewProvider {
         const picked = await vscode.window.showWarningMessage(
           `A local list with the same id already exists: "${localConflict.name}". What do you want to do?`,
           { modal: true },
-          "Open as shared list",
+          "Open as workspace list",
           "Create local copy",
           "Cancel"
         );
@@ -1141,18 +1598,21 @@ class TodoController implements vscode.WebviewViewProvider {
           return;
         }
 
-        if (picked !== "Open as shared list") {
+        if (picked !== "Open as workspace list") {
           return;
         }
       }
 
       const record = await storageManager.addSharedListFromShareKey(shareKey.trim());
       await this.reloadSharedLists();
+      if (storageManager.getStorageMode() === "local") {
+        await storageManager.switchToHybrid();
+      }
       await this.state.setExpandedListId(record.id);
       await this.refresh();
-      void vscode.window.showInformationMessage(`Loaded shared list "${record.listName}".`);
+      void vscode.window.showInformationMessage(`Loaded workspace list "${record.listName}".`);
     } catch (error) {
-      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to add shared list.");
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to add workspace list.");
     }
   }
 
@@ -1165,9 +1625,9 @@ class TodoController implements vscode.WebviewViewProvider {
       await storageManager.syncSharedList(record.id);
       await this.reloadSharedLists();
       await this.refresh();
-      void vscode.window.showInformationMessage(`Synced shared list "${record.listName}".`);
+      void vscode.window.showInformationMessage(`Synced workspace list "${record.listName}".`);
     } catch (error) {
-      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to sync shared list.");
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : "Failed to sync workspace list.");
     }
   }
 
@@ -1179,7 +1639,7 @@ class TodoController implements vscode.WebviewViewProvider {
     this.updateAutoRefreshTimer();
     void vscode.window.showInformationMessage(
       this.autoRefreshEnabled
-        ? "Automatic refresh enabled. Shared lists will refresh every 5 minutes when present."
+        ? "Automatic refresh enabled. Workspace lists will refresh every 5 minutes when present."
         : "Automatic refresh disabled."
     );
   }
@@ -1262,66 +1722,28 @@ class TodoController implements vscode.WebviewViewProvider {
     todoId: TodoId,
     targetListId: ListId,
     targetGroupId?: GroupId,
-    source: ListSource = "local"
+    source: ListSource = "local",
+    targetSource: ListSource = "local"
   ): Promise<void> {
-    if (source === "shared") {
-      const record = this.getSharedRecord(sourceListId);
-      const target = this.getSharedRecord(targetListId);
-      if (!record || !target || record.id !== target.id) {
-        void vscode.window.showWarningMessage("Shared items can only be moved within the same shared list.");
-        return;
-      }
-      const nextStore = this.cloneStore(record.snapshot.store);
-      const todo = this.removeTodo(nextStore, todoId);
-      if (!todo) {
-        return;
-      }
-      if (!this.insertTodo(nextStore, todo, targetGroupId)) {
-        return;
-      }
-      await storageManager.saveSharedList(record.id, (list) => {
-        list.store = nextStore;
-      });
-      await this.reloadSharedLists();
-      await this.refresh();
+    const sourceStore = this.getListStoreClone(sourceListId, source);
+    const targetStore = source === targetSource && sourceListId === targetListId
+      ? sourceStore
+      : this.getListStoreClone(targetListId, targetSource);
+    if (!sourceStore || !targetStore) {
       return;
     }
 
-    const sourceList = this.state.getList(sourceListId);
-    const targetList = this.state.getList(targetListId);
-    if (!sourceList || !targetList) {
-      return;
-    }
-
-    const nextSource = this.cloneStore(sourceList.store);
-    const todo = this.removeTodo(nextSource, todoId);
+    const todo = this.removeTodo(sourceStore, todoId);
     if (!todo) {
       return;
     }
-
-    if (sourceListId === targetListId) {
-      if (!this.insertTodo(nextSource, todo, targetGroupId)) {
-        return;
-      }
-      await this.state.updateList(sourceListId, (list) => {
-        list.store = nextSource;
-      });
-    } else {
-      const nextTarget = this.cloneStore(targetList.store);
-      if (!this.insertTodo(nextTarget, todo, targetGroupId)) {
-        return;
-      }
-      await this.state.updateList(sourceListId, (list) => {
-        list.store = nextSource;
-      });
-      await this.state.updateList(targetListId, (list) => {
-        list.store = nextTarget;
-      });
+    if (!this.insertTodo(targetStore, todo, targetGroupId)) {
+      return;
     }
 
-    await this.state.ensureListVisible(targetListId);
+    await this.writeMovedStores(sourceListId, source, sourceStore, targetListId, targetSource, targetStore);
     await this.state.setExpandedListId(targetListId);
-    await this.refresh();
+    this.renderCurrentView();
   }
 
   public async moveGroup(
@@ -1329,43 +1751,18 @@ class TodoController implements vscode.WebviewViewProvider {
     groupId: GroupId,
     targetListId: ListId,
     targetGroupId?: GroupId,
-    source: ListSource = "local"
+    source: ListSource = "local",
+    targetSource: ListSource = "local"
   ): Promise<void> {
-    if (source === "shared") {
-      const record = this.getSharedRecord(sourceListId);
-      const target = this.getSharedRecord(targetListId);
-      if (!record || !target || record.id !== target.id) {
-        void vscode.window.showWarningMessage("Shared folders can only be moved within the same shared list.");
-        return;
-      }
-      const nextGroups = this.cloneStore(record.snapshot.store).groups;
-      const group = this.removeGroup(nextGroups, groupId);
-      if (!group) {
-        return;
-      }
-      if (this.containsGroup(group, targetGroupId) || group.id === targetGroupId) {
-        void vscode.window.showWarningMessage("A group cannot be moved into itself or its descendant.");
-        return;
-      }
-      if (!this.insertGroup(nextGroups, group, targetGroupId)) {
-        return;
-      }
-      await storageManager.saveSharedList(record.id, (list) => {
-        list.store.groups = nextGroups;
-      });
-      await this.reloadSharedLists();
-      await this.refresh();
+    const sourceStore = this.getListStoreClone(sourceListId, source);
+    const targetStore = source === targetSource && sourceListId === targetListId
+      ? sourceStore
+      : this.getListStoreClone(targetListId, targetSource);
+    if (!sourceStore || !targetStore) {
       return;
     }
 
-    const sourceList = this.state.getList(sourceListId);
-    const targetList = this.state.getList(targetListId);
-    if (!sourceList || !targetList) {
-      return;
-    }
-
-    const nextSource = this.cloneStore(sourceList.store);
-    const group = this.removeGroup(nextSource.groups, groupId);
+    const group = this.removeGroup(sourceStore.groups, groupId);
     if (!group) {
       return;
     }
@@ -1374,29 +1771,59 @@ class TodoController implements vscode.WebviewViewProvider {
       return;
     }
 
-    if (sourceListId === targetListId) {
-      if (!this.insertGroup(nextSource.groups, group, targetGroupId)) {
-        return;
-      }
-      await this.state.updateList(sourceListId, (list) => {
-        list.store = nextSource;
-      });
-    } else {
-      const nextTarget = this.cloneStore(targetList.store);
-      if (!this.insertGroup(nextTarget.groups, group, targetGroupId)) {
-        return;
-      }
-      await this.state.updateList(sourceListId, (list) => {
-        list.store = nextSource;
-      });
-      await this.state.updateList(targetListId, (list) => {
-        list.store = nextTarget;
-      });
+    if (!this.insertGroup(targetStore.groups, group, targetGroupId)) {
+      return;
     }
 
-    await this.state.ensureListVisible(targetListId);
+    await this.writeMovedStores(sourceListId, source, sourceStore, targetListId, targetSource, targetStore);
     await this.state.setExpandedListId(targetListId);
-    await this.refresh();
+    this.renderCurrentView();
+  }
+
+  private getListStoreClone(listId: ListId, source: ListSource): TodoStore | undefined {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      return record ? this.cloneStore(record.snapshot.store) : undefined;
+    }
+
+    const list = this.state.getList(listId);
+    return list ? this.cloneStore(list.store) : undefined;
+  }
+
+  private async writeMovedStores(
+    sourceListId: ListId,
+    source: ListSource,
+    sourceStore: TodoStore,
+    targetListId: ListId,
+    targetSource: ListSource,
+    targetStore: TodoStore
+  ): Promise<void> {
+    const sameList = source === targetSource && sourceListId === targetListId;
+    await this.writeMovedStore(sourceListId, source, sourceStore);
+    if (!sameList) {
+      await this.writeMovedStore(targetListId, targetSource, targetStore);
+    }
+  }
+
+  private async writeMovedStore(listId: ListId, source: ListSource, store: TodoStore): Promise<void> {
+    if (source === "shared") {
+      const record = this.getSharedRecord(listId);
+      if (!record) {
+        return;
+      }
+      record.snapshot = { ...record.snapshot, store: this.normalizeStore(store) };
+      record.listName = record.snapshot.name;
+      this.scheduleWorkspaceSync(record.id);
+      return;
+    }
+
+    await this.state.updateList(listId, (list) => {
+      list.store = store;
+    });
+    await this.state.ensureListVisible(listId);
+    if (storageManager.getStorageMode() === "github") {
+      this.schedulePersonalSync();
+    }
   }
 
   private async handleAction(action: WebviewAction): Promise<void> {
@@ -1416,6 +1843,10 @@ class TodoController implements vscode.WebviewViewProvider {
       }
       case "toggleListExpanded":
         await this.toggleListExpanded(action.listId);
+        return;
+      case "toggleEditorListExpanded":
+        this.editorExpanded = !this.editorExpanded;
+        this.renderCurrentView();
         return;
       case "addList":
         await this.addList();
@@ -1441,6 +1872,9 @@ class TodoController implements vscode.WebviewViewProvider {
       case "toggleDone":
         await this.toggleDone(action.listId, action.todoId, action.source ?? "local");
         return;
+      case "toggleGroupExpanded":
+        await this.setGroupExpandedState(action.listId, action.groupId, action.open);
+        return;
       case "deleteTodo":
         await this.deleteTodo(action.listId, action.todoId, action.source ?? "local");
         return;
@@ -1460,10 +1894,10 @@ class TodoController implements vscode.WebviewViewProvider {
         await this.importData();
         return;
       case "moveTodo":
-        await this.moveTodo(action.sourceListId, action.todoId, action.targetListId, action.targetGroupId, action.source ?? "local");
+        await this.moveTodo(action.sourceListId, action.todoId, action.targetListId, action.targetGroupId, action.source ?? "local", action.targetSource ?? "local");
         return;
       case "moveGroup":
-        await this.moveGroup(action.sourceListId, action.groupId, action.targetListId, action.targetGroupId, action.source ?? "local");
+        await this.moveGroup(action.sourceListId, action.groupId, action.targetListId, action.targetGroupId, action.source ?? "local", action.targetSource ?? "local");
         return;
       case "shareCurrentList":
         await this.shareCurrentList(action.listId);
@@ -1473,6 +1907,9 @@ class TodoController implements vscode.WebviewViewProvider {
         return;
       case "copyShareKey":
         await this.copyShareKey(action.listId, action.source ?? "shared");
+        return;
+      case "inviteUserToWorkspace":
+        await this.inviteUserToWorkspace(action.workspaceOwner, action.workspaceRepo);
         return;
       case "addSharedList":
         await this.addSharedList();
@@ -1502,46 +1939,114 @@ class TodoController implements vscode.WebviewViewProvider {
       ?? this.editorPanel?.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "codicons", "codicon.css"))
       ?? "";
     const filter = this.state.readFilter();
-    const shellState = this.state.readShellState();
     const visibleIds = new Set(this.state.readVisibleListIds());
-    const allLists = this.buildRenderableLists();
+    const privateLists = this.state.listLists().filter((list) => visibleIds.has(list.id));
+    const workspaceGroups = this.groupWorkspaceLists(this.sharedListsCache);
     const storageMode = storageManager.getStorageMode();
     const retentionDays = this.state.getCompletedRetentionDays();
-    const sharedCount = allLists.filter((list) => list.source === "shared").length;
+    const workspaceCount = this.workspaceReposCache.length;
+    const displayStorageMode = storageMode === "local"
+      ? "local"
+      : workspaceCount > 0
+        ? "hybrid"
+        : storageMode;
     const autoRefreshLabel = this.autoRefreshEnabled
-      ? sharedCount > 0
+      ? workspaceCount > 0
         ? "on"
-        : "on, waiting for shared list"
+        : "on, waiting for workspace"
       : "off";
-    const renderedLists = target
-      ? allLists.filter((list) => list.displayId === target.listId && list.source === target.source)
-      : allLists.filter((list) => list.source === "shared" || visibleIds.has(list.id));
-    const expandedListId = target ? target.listId : this.state.readExpandedListId();
-    const statusRow = `<div class="status-row" aria-label="Current settings"><span class="status-chip"><span class="status-label">Storage</span><span class="status-value">${this.escapeHtml(storageMode)}</span></span><span class="status-chip"><span class="status-label">Retention</span><span class="status-value">${retentionDays} days</span></span><span class="status-chip"><span class="status-label">Auto refresh</span><span class="status-value">${this.escapeHtml(autoRefreshLabel)}</span></span></div>`;
+    const focusedRenderedList = target
+      ? (() => {
+          if (target.source === "shared") {
+            const record = this.sharedListsCache.find((item) => item.id === target.listId);
+            return record
+              ? {
+                  source: "shared" as const,
+                  id: record.id,
+                  displayId: record.id,
+                  name: record.listName,
+                  createdAt: record.snapshot.createdAt,
+                  store: record.snapshot.store,
+                  record
+                }
+              : undefined;
+          }
+          const list = this.state.getList(target.listId);
+          return list
+            ? {
+                source: "local" as const,
+                id: list.id,
+                displayId: list.id,
+                name: list.name,
+                createdAt: list.createdAt,
+                store: list.store
+              }
+            : undefined;
+        })()
+      : undefined;
+    const renderedPrivateLists = target
+      ? privateLists.filter((list) => list.id === target.listId && target.source === "local")
+      : filter
+        ? privateLists.filter((list) => this.listMatchesFilter(list, filter))
+        : privateLists;
+    const editorMode = Boolean(target);
+    const renderedWorkspaces = target
+      ? workspaceGroups.filter((workspace) =>
+          workspace.lists.some((list) => list.displayId === target.listId && list.source === target.source)
+        )
+      : filter
+        ? workspaceGroups
+            .map((workspace) => ({
+              ...workspace,
+              lists: workspace.lists.filter((list) => this.listMatchesFilter(list, filter))
+            }))
+            .filter((workspace) => workspace.repo.name.toLowerCase().includes(filter.toLowerCase()) || workspace.lists.length > 0)
+        : workspaceGroups;
+    const expandedListId = target ? (this.editorExpanded ? target.listId : undefined) : this.state.readExpandedListId();
+    const statusRow = `<div class="status-row" aria-label="Current settings"><span class="status-chip"><span class="status-label">Storage</span><span class="status-value">${this.escapeHtml(displayStorageMode)}</span></span><span class="status-chip"><span class="status-label">Retention</span><span class="status-value">${retentionDays} days</span></span><span class="status-chip"><span class="status-label">Auto refresh</span><span class="status-value">${this.escapeHtml(autoRefreshLabel)}</span></span></div>`;
+    const headerContent = target
+      ? `<div class="toolbar"><span class="title">${this.escapeHtml(focusedRenderedList?.name ?? "List not found")}</span><span class="toolbar-meta">List editor</span></div>`
+      : `<div class="toolbar"><input id="filter" class="filter" type="text" value="${this.escapeHtml(filter)}" placeholder="Filter tasks and folders" />${filter ? `<button class="btn" data-action="clearFilter" title="Clear filter">${this.icon("clear")}</button>` : ""}<span id="search-indicator" class="search-indicator" aria-hidden="true" title="Searching"><span class="spinner"></span></span></div>${statusRow}`;
+    const mainContent = target
+      ? `<div class="stack">${focusedRenderedList ? this.renderListCard(focusedRenderedList, true, filter, true, true) : '<div class="empty">List not found.</div>'}</div>`
+      : `<div class="stack">${renderedWorkspaces.map((workspace) => this.renderWorkspaceGroup(workspace, expandedListId, filter, editorMode)).join("") || '<div class="empty">No workspaces yet.</div>'}<div class="section" style="border:none;background:transparent"><div class="section-header"><span class="title">Private</span><span class="meta">${storageMode === "github" ? "personal repo sync on" : storageMode === "hybrid" ? "hybrid mode" : workspaceCount > 0 ? "workspace sync on" : "local only"}</span></div><div class="section-body"><div class="stack">${renderedPrivateLists.map((list) => this.renderListCard({ source: "local", id: list.id, displayId: list.id, name: list.name, createdAt: list.createdAt, store: list.store }, expandedListId === list.id, filter, editorMode)).join("") || '<div class="empty">No private lists.</div>'}</div></div></div></div>`;
 
     return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="stylesheet" href="${codiconCssUri}" />
 <style>
 :root{--bg:var(--vscode-sideBar-background);--panel:var(--vscode-editorWidget-background,var(--vscode-sideBarSectionHeader-background,var(--vscode-sideBar-background)));--panel-2:var(--vscode-input-background);--border:var(--vscode-widget-border,var(--vscode-sideBar-border));--text:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--hover:var(--vscode-list-hoverBackground);--focus:var(--vscode-focusBorder);--button:var(--vscode-button-secondaryBackground);--buttonText:var(--vscode-button-secondaryForeground);--danger:var(--vscode-errorForeground,#f85149);--dangerBg:color-mix(in srgb,var(--danger) 14%, transparent);--shared:var(--vscode-charts-purple,#7c9cff)}
- *{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:13px/1.4 var(--vscode-font-family)}body{padding:12px;min-width:230px}button,input{font:inherit;color:inherit}.app{display:flex;flex-direction:column;gap:12px}.toolbar{display:flex;align-items:flex-start;gap:8px}.status-row{display:flex;flex-wrap:wrap;gap:8px}.status-chip{display:inline-flex;align-items:baseline;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:color-mix(in srgb,var(--panel) 82%, transparent);color:var(--text);font-size:12px;line-height:1}.status-label{color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px}.status-value{font-weight:600}.filter{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px}.btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--border);background:var(--button);color:var(--buttonText);border-radius:8px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease}.btn:hover,.action:hover,.list-row:hover,.todo-row:hover,.group-summary:hover,.quick-add-row:hover{background:var(--hover)}.icon{display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;transition:transform .12s ease,color .12s ease,opacity .12s ease}.btn:hover .icon,.action:hover .icon{transform:scale(1.06)}.section{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel)}.section-header{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}.section.closed .section-body{display:none}.section-body{padding:10px}.title{font-weight:600}.meta{margin-left:auto;color:var(--muted);font-size:12px;flex:0 1 auto;white-space:nowrap;overflow:hidden}.stack{display:flex;flex-direction:column;gap:8px}.list-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel-2)}.list-card.shared{border-color:color-mix(in srgb,var(--shared) 40%, var(--border));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--shared) 18%, transparent)}.list-row{position:relative;display:flex;align-items:center;gap:8px;padding:10px;min-width:0}.grow{flex:1 1 auto;min-width:0}.label{display:block;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.list-row .label.title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}.list-stats{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;flex:0 1 auto;min-width:0}.stat-pill{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.stat-pill .icon{font-size:13px}.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;background:color-mix(in srgb,var(--shared) 16%, transparent);color:var(--shared);font-size:11px;line-height:1;white-space:nowrap}.actions,.hover-tools{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:inline-flex;gap:6px;opacity:0;pointer-events:none;transition:opacity .12s ease;z-index:2;padding-left:8px;background:linear-gradient(90deg, transparent 0%, color-mix(in srgb,var(--panel-2) 72%, transparent) 18%, var(--panel-2) 38%)}.group-summary .hover-tools,.todo-row .hover-tools{background:linear-gradient(90deg, transparent 0%, color-mix(in srgb,var(--panel) 72%, transparent) 18%, var(--panel) 38%)}.list-card:hover .actions,.list-card:focus-within .actions,.todo-row:hover .hover-tools,.todo-row:focus-within .hover-tools,.group-summary:hover .hover-tools,.group:focus-within .hover-tools{opacity:1;pointer-events:auto}.action{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid transparent;background:transparent;color:var(--text);border-radius:6px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease}.action:hover{border-color:var(--border);transform:translateY(-1px)}.action-danger{color:var(--danger)}.action-danger:hover{border-color:color-mix(in srgb,var(--danger) 55%, var(--border));background:var(--dangerBg)}.content{display:flex;flex-direction:column;gap:8px;padding:10px;border-top:1px solid var(--border)}.drop-target.over{outline:1px solid var(--focus);outline-offset:-1px}.group{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--panel)}.group-summary{position:relative;list-style:none;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;cursor:pointer}.group-summary::-webkit-details-marker{display:none}.group-body{display:flex;flex-direction:column;gap:8px;padding:0 10px 10px 18px}.todo-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:8px}.todo-main{display:flex;flex-direction:column;gap:2px;min-width:0;padding-top:1px}.todo-date{font-size:11px;color:var(--muted);opacity:0;max-height:0;overflow:hidden;transform:translateY(-2px);transition:opacity .12s ease,max-height .12s ease,transform .12s ease}.todo-row:hover .todo-date,.todo-row:focus-within .todo-date{opacity:1;max-height:18px;transform:translateY(0)}.quick-add-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px;background:color-mix(in srgb,var(--panel) 80%, transparent)}.quick-add-input{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:6px}.check{width:18px;height:18px;border:1.5px solid color-mix(in srgb,var(--text) 55%, var(--border));border-radius:5px;background:color-mix(in srgb,var(--panel-2) 88%, white 12%);cursor:pointer;padding:0;position:relative;flex:0 0 auto;margin-top:1px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bg) 55%, transparent)}.check:hover{border-color:var(--focus);background:color-mix(in srgb,var(--hover) 55%, var(--panel-2))}.check.done{background:var(--vscode-testing-iconPassed,#2ea043);border-color:var(--vscode-testing-iconPassed,#2ea043);box-shadow:none}.check.done::after{content:'';position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}.done{text-decoration:line-through;color:var(--muted)}.empty{padding:8px;color:var(--muted)}.caret{transition:transform .12s ease}.section.closed .caret,.details-caret{transform:rotate(-90deg)}details[open]>.group-summary .details-caret,.list-card.expanded .caret-list{transform:rotate(0)}.caret-list{transform:rotate(-90deg)}@media (max-width: 320px){.list-stats{display:none}}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:13px/1.4 var(--vscode-font-family)}body{padding:12px;min-width:230px}button,input{font:inherit;color:inherit}.app{display:flex;flex-direction:column;gap:12px}.toolbar{display:flex;align-items:flex-start;gap:8px}.toolbar-meta{margin-left:auto;color:var(--muted);font-size:12px;align-self:center;white-space:nowrap}.search-indicator{display:none;align-items:center;justify-content:center;width:28px;height:28px;align-self:center}.search-indicator.visible{display:inline-flex}.spinner{width:14px;height:14px;border:2px solid color-mix(in srgb,var(--muted) 28%, transparent);border-top-color:var(--shared);border-radius:50%;animation:spin .7s linear infinite}.status-row{display:flex;flex-wrap:wrap;gap:8px}.status-chip{display:inline-flex;align-items:baseline;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:color-mix(in srgb,var(--panel) 82%, transparent);color:var(--text);font-size:12px;line-height:1}.status-label{color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px}.status-value{font-weight:600}.filter{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px}.btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--border);background:var(--button);color:var(--buttonText);border-radius:8px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease}.btn:hover,.action:hover,.list-row:hover,.todo-row:hover,.group-summary:hover,.quick-add-row:hover{background:var(--hover)}.icon{display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;transition:transform .12s ease,color .12s ease,opacity .12s ease}.btn:hover .icon,.action:hover .icon{transform:scale(1.06)}.section{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel)}.section-header{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}.section.closed .section-body{display:none}.section-body{padding:10px}.title{font-weight:600}.meta{margin-left:auto;color:var(--muted);font-size:12px;flex:0 1 auto;white-space:nowrap;overflow:hidden}.stack{display:flex;flex-direction:column;gap:8px}.list-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel-2)}.list-card.shared{border-color:color-mix(in srgb,var(--shared) 40%, var(--border));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--shared) 18%, transparent)}.list-row{position:relative;display:flex;align-items:center;gap:8px;padding:10px;min-width:0}.grow{flex:1 1 auto;min-width:0}.label{display:block;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.list-row .label.title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}.list-stats{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;flex:0 1 auto;min-width:0}.stat-pill{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.stat-pill .icon{font-size:13px}.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;background:color-mix(in srgb,var(--shared) 16%, transparent);color:var(--shared);font-size:11px;line-height:1;white-space:nowrap}.actions,.hover-tools{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:inline-flex;gap:6px;opacity:0;pointer-events:none;transition:opacity .12s ease;z-index:2;padding-left:8px;background:linear-gradient(90deg, transparent 0%, color-mix(in srgb,var(--panel-2) 72%, transparent) 18%, var(--panel-2) 38%)}.group-summary .hover-tools,.todo-row .hover-tools{background:linear-gradient(90deg, transparent 0%, color-mix(in srgb,var(--panel) 72%, transparent) 18%, var(--panel) 38%)}.list-card:hover .actions,.list-card:focus-within .actions,.todo-row:hover .hover-tools,.todo-row:focus-within .hover-tools,.group-summary:hover .hover-tools,.group:focus-within .hover-tools{opacity:1;pointer-events:auto}.action{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid transparent;background:transparent;color:var(--text);border-radius:6px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease}.action:hover{border-color:var(--border);transform:translateY(-1px)}.action-danger{color:var(--danger)}.action-danger:hover{border-color:color-mix(in srgb,var(--danger) 55%, var(--border));background:var(--dangerBg)}.content{display:flex;flex-direction:column;gap:8px;padding:10px;border-top:1px solid var(--border)}.drop-target.over{outline:1px solid var(--focus);outline-offset:-1px}.group{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--panel)}.group-summary{position:relative;list-style:none;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;cursor:pointer}.group-summary::-webkit-details-marker{display:none}.group-body{display:flex;flex-direction:column;gap:8px;padding:0 10px 10px 18px}.todo-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:8px}.todo-main{display:flex;flex-direction:column;gap:2px;min-width:0;padding-top:1px}.todo-date{font-size:11px;color:var(--muted);line-height:1.1;white-space:nowrap;opacity:0;max-height:0;overflow:hidden;transform:translateY(-2px);transition:opacity .12s ease,max-height .12s ease,transform .12s ease}.todo-row:hover .todo-date,.todo-row:focus-within .todo-date{opacity:1;max-height:18px;transform:translateY(0)}.search-hit{color:var(--shared);font-weight:600}.quick-add-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px;background:color-mix(in srgb,var(--panel) 80%, transparent)}.quick-add-input{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:6px}.check{width:18px;height:18px;border:1.5px solid color-mix(in srgb,var(--text) 55%, var(--border));border-radius:5px;background:color-mix(in srgb,var(--panel-2) 88%, white 12%);cursor:pointer;padding:0;position:relative;flex:0 0 auto;margin-top:1px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bg) 55%, transparent)}.check:hover{border-color:var(--focus);background:color-mix(in srgb,var(--hover) 55%, var(--panel-2))}.check.done{background:var(--vscode-testing-iconPassed,#2ea043);border-color:var(--vscode-testing-iconPassed,#2ea043);box-shadow:none}.check.done::after{content:'';position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}.done{text-decoration:line-through;color:var(--muted)}.empty{padding:8px;color:var(--muted)}.caret{transition:transform .12s ease}.section.closed .caret,.details-caret{transform:rotate(-90deg)}details[open]>.group-summary .details-caret,.list-card.expanded .caret-list{transform:rotate(0)}.caret-list{transform:rotate(-90deg)}@media (max-width: 320px){.list-stats{display:none}}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
  </style>
 <style>.badge-icon{padding:4px 6px}.action-share{color:var(--shared)}.action-share:hover{border-color:color-mix(in srgb,var(--shared) 60%, var(--border));background:color-mix(in srgb,var(--shared) 14%, transparent)}</style></head><body><div class="app">
-<div class="toolbar"><input id="filter" class="filter" type="text" value="${this.escapeHtml(filter)}" placeholder="Filter tasks and folders" />${filter ? `<button class="btn" data-action="clearFilter" title="Clear filter">${this.icon("clear")}</button>` : ""}</div>
-${statusRow}
-<section class="section ${shellState.lists ? "" : "closed"}"><div class="section-header" data-action="toggleShellSection" data-shell-id="lists"><span class="caret">${this.icon("chevron")}</span><span class="title">${target ? "List Editor" : "Lists"}</span><span class="meta">${renderedLists.filter((list) => list.source === "local").length} local / ${renderedLists.filter((list) => list.source === "shared").length} shared</span></div><div class="section-body"><div class="stack">${renderedLists.map((list) => this.renderListCard(list, expandedListId === list.id, filter)).join("") || '<div class="empty">No visible lists.</div>'}</div></div></section>
+${headerContent}
+${mainContent}
 </div>
 <script>
 const vscode=acquireVsCodeApi();
 const readState=()=>vscode.getState()||{};
 const writeState=next=>vscode.setState(next);
+const rememberScrollPosition=()=>{const state=readState();writeState({...state,scrollTop:document.scrollingElement?.scrollTop??document.documentElement.scrollTop??0});};
+const restoreScrollPosition=()=>{const state=readState();const top=Number(state.scrollTop??0);if(Number.isFinite(top)&&top>0){requestAnimationFrame(()=>window.scrollTo(0,top));}};
 const findQuickAddInput=(listId,groupId)=>Array.from(document.querySelectorAll('.quick-add-input')).find(input=>input.dataset.listId===listId&&((input.dataset.groupId??'')===(groupId??'')));
 const rememberQuickAddFocus=(listId,groupId)=>{const state=readState();writeState({...state,pendingQuickAdd:{listId,groupId:groupId??''}});};
 const restoreQuickAddFocus=()=>{const state=readState();const pending=state.pendingQuickAdd;if(!pending){return;}const input=findQuickAddInput(pending.listId,pending.groupId);if(input instanceof HTMLInputElement){input.focus();input.select();}writeState({...state,pendingQuickAdd:undefined});};
-document.getElementById('filter')?.addEventListener('input',event=>vscode.postMessage({type:'setFilter',value:event.target.value}));
-document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(!target){return;}const type=target.dataset.action;if(type==='toggleShellSection'){vscode.postMessage({type,shellId:target.dataset.shellId});return;}if(type==='toggleListExpanded'){vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}if(type==='addGroup'||type==='addTodo'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='quickAddTodo'){event.stopPropagation();const row=target.closest('.quick-add-row');const input=row?.querySelector('.quick-add-input');rememberQuickAddFocus(target.dataset.listId,target.dataset.groupId);vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,text:input?.value??'',source:target.dataset.source});if(input){input.value='';}return;}if(type==='shareCurrentList'||type==='copyShareKey'||type==='openListInEditor'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}if(type==='renameGroup'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='toggleDone'||type==='deleteTodo'||type==='renameTodo'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,todoId:target.dataset.todoId,source:target.dataset.source});return;}if(type==='deleteGroup'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='deleteList'||type==='renameList'||type==='syncSharedList'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}vscode.postMessage({type});});
+const bindGroupToggleState=()=>{document.querySelectorAll('details.group[data-list-id][data-group-id]').forEach(details=>{details.addEventListener('toggle',()=>{vscode.postMessage({type:'toggleGroupExpanded',listId:details.dataset.listId,groupId:details.dataset.groupId,source:details.dataset.source,open:details.open});});});};
+let filterTimer;
+let scrollTimer;
+const rememberFilterFocus=()=>{const state=readState();writeState({...state,pendingFilterFocus:true});};
+const showSearchIndicator=visible=>{const el=document.getElementById('search-indicator');if(el){el.classList.toggle('visible',visible);}};
+const restoreFilterFocus=()=>{const state=readState();if(!state.pendingFilterFocus){return;}const input=document.getElementById('filter');if(input instanceof HTMLInputElement){input.focus();input.setSelectionRange(input.value.length,input.value.length);}writeState({...state,pendingFilterFocus:undefined});};
+window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(rememberScrollPosition,80);},{passive:true});
+window.addEventListener('beforeunload',rememberScrollPosition);
+document.getElementById('filter')?.addEventListener('input',event=>{rememberFilterFocus();showSearchIndicator(true);clearTimeout(filterTimer);const value=event.target.value;filterTimer=setTimeout(()=>vscode.postMessage({type:'setFilter',value}),220);});
+document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(!target){return;}const type=target.dataset.action;if(type==='toggleShellSection'){vscode.postMessage({type,shellId:target.dataset.shellId});return;}if(type==='toggleListExpanded'){vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}if(type==='addGroup'||type==='addTodo'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='quickAddTodo'){event.stopPropagation();const row=target.closest('.quick-add-row');const input=row?.querySelector('.quick-add-input');rememberQuickAddFocus(target.dataset.listId,target.dataset.groupId);vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,text:input?.value??'',source:target.dataset.source});if(input){input.value='';}return;}if(type==='shareCurrentList'||type==='copyShareKey'||type==='openListInEditor'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}if(type==='inviteUserToWorkspace'){event.stopPropagation();vscode.postMessage({type,workspaceOwner:target.dataset.workspaceOwner,workspaceRepo:target.dataset.workspaceRepo});return;}if(type==='renameGroup'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='toggleDone'||type==='deleteTodo'||type==='renameTodo'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,todoId:target.dataset.todoId,source:target.dataset.source});return;}if(type==='deleteGroup'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,groupId:target.dataset.groupId,source:target.dataset.source});return;}if(type==='deleteList'||type==='renameList'||type==='syncSharedList'){event.stopPropagation();vscode.postMessage({type,listId:target.dataset.listId,source:target.dataset.source});return;}vscode.postMessage({type});});
 document.addEventListener('keydown',event=>{const input=event.target.closest('.quick-add-input');if(!input||event.key!=='Enter'){return;}event.preventDefault();rememberQuickAddFocus(input.dataset.listId,input.dataset.groupId);vscode.postMessage({type:'quickAddTodo',listId:input.dataset.listId,groupId:input.dataset.groupId,text:input.value,source:input.dataset.source});input.value='';});
-document.querySelectorAll('[data-drop-list-id]').forEach(element=>{element.addEventListener('dragover',event=>{event.preventDefault();event.stopPropagation();element.classList.add('over');});element.addEventListener('dragleave',event=>{event.stopPropagation();element.classList.remove('over');});element.addEventListener('drop',event=>{event.preventDefault();event.stopPropagation();element.classList.remove('over');const raw=event.dataTransfer?.getData('application/x-todo-item');if(!raw){return;}const payload=JSON.parse(raw);if(payload.type==='todo'){vscode.postMessage({type:'moveTodo',sourceListId:payload.listId,todoId:payload.todoId,targetListId:element.dataset.dropListId,targetGroupId:element.dataset.dropGroupId,source:payload.source});return;}vscode.postMessage({type:'moveGroup',sourceListId:payload.listId,groupId:payload.groupId,targetListId:element.dataset.dropListId,targetGroupId:element.dataset.dropGroupId,source:payload.source});});});
+document.querySelectorAll('[data-drop-list-id]').forEach(element=>{element.addEventListener('dragover',event=>{event.preventDefault();event.stopPropagation();element.classList.add('over');});element.addEventListener('dragleave',event=>{event.stopPropagation();element.classList.remove('over');});element.addEventListener('drop',event=>{event.preventDefault();event.stopPropagation();element.classList.remove('over');const raw=event.dataTransfer?.getData('application/x-todo-item');if(!raw){return;}const payload=JSON.parse(raw);const targetSource=element.dataset.source??'local';if(payload.type==='todo'){vscode.postMessage({type:'moveTodo',sourceListId:payload.listId,todoId:payload.todoId,targetListId:element.dataset.dropListId,targetGroupId:element.dataset.dropGroupId,source:payload.source,targetSource});return;}vscode.postMessage({type:'moveGroup',sourceListId:payload.listId,groupId:payload.groupId,targetListId:element.dataset.dropListId,targetGroupId:element.dataset.dropGroupId,source:payload.source,targetSource});});});
 document.querySelectorAll('.drag').forEach(element=>{element.addEventListener('dragstart',event=>{event.stopPropagation();event.dataTransfer?.setData('application/x-todo-item',JSON.stringify({type:element.dataset.dragType,listId:element.dataset.listId,todoId:element.dataset.todoId,groupId:element.dataset.groupId,source:element.dataset.source}));if(event.dataTransfer){event.dataTransfer.effectAllowed='move';}});});
+bindGroupToggleState();
 restoreQuickAddFocus();
+restoreFilterFocus();
+restoreScrollPosition();
+showSearchIndicator(false);
 </script></body></html>`;
   }
 
@@ -1562,35 +2067,86 @@ restoreQuickAddFocus();
       name: record.listName,
       createdAt: record.snapshot.createdAt,
       store: record.snapshot.store,
-      record,
-      sharedBadge: `${record.target.owner}/${record.target.repo}`
+      record
     }));
     return [...localLists, ...sharedLists].sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name));
   }
 
-  private renderListCard(list: RenderedList, isExpanded: boolean, filter: string): string {
+  private groupWorkspaceLists(records: SharedListRecord[]): Array<{ repo: ManagedRepositoryRecord; lists: RenderedList[] }> {
+    const grouped = new Map<string, { repo: ManagedRepositoryRecord; lists: RenderedList[] }>();
+    for (const repo of this.workspaceReposCache) {
+      grouped.set(`${repo.target.owner}/${repo.target.repo}`, { repo, lists: [] });
+    }
+    for (const record of records) {
+      const key = `${record.target.owner}/${record.target.repo}`;
+      const repo = grouped.get(key) ?? {
+        repo: {
+          kind: "workspace",
+          name: record.target.repo,
+          description: undefined,
+          collaborators: [],
+          target: { owner: record.target.owner, repo: record.target.repo, branch: record.target.branch, path: "" }
+        },
+        lists: []
+      };
+      repo.lists.push({
+        source: "shared",
+        id: record.id,
+        displayId: record.id,
+        name: record.listName,
+        createdAt: record.snapshot.createdAt,
+        store: record.snapshot.store,
+        record
+      });
+      grouped.set(key, repo);
+    }
+    return [...grouped.values()].sort((a, b) => a.repo.name.localeCompare(b.repo.name));
+  }
+
+  private renderWorkspaceGroup(workspace: { repo: ManagedRepositoryRecord; lists: RenderedList[] }, expandedListId?: ListId, filter = "", editorMode = false): string {
+    const collaboratorNames = workspace.repo.collaborators?.length ? workspace.repo.collaborators.join(", ") : "No collaborators";
+    const collaboratorCount = workspace.repo.collaborators?.length ?? 0;
+    const body = workspace.lists
+      .map((list) => this.renderListCard(list, expandedListId === list.id, filter, editorMode))
+      .join("");
+    return `<details class="group" open><summary class="group-summary"><span class="details-caret">${this.icon("chevron")}</span><span class="grow label">${this.highlightText(workspace.repo.name, filter)} <span class="badge" title="${this.escapeHtml(collaboratorNames)}">${collaboratorCount}</span></span><span class="hover-tools"><button class="action" type="button" data-action="inviteUserToWorkspace" data-workspace-owner="${workspace.repo.target.owner}" data-workspace-repo="${workspace.repo.target.repo}" title="Invite user">${this.icon("settings")}</button><button class="action" type="button" data-action="refresh" title="Refresh workspace">${this.icon("refresh")}</button></span></summary><div class="group-body">${body || '<div class="empty">No lists yet.</div>'}</div></details>`;
+  }
+
+  private renderListCard(list: RenderedList, isExpanded: boolean, filter: string, editorMode = false, forceExpanded = false): string {
+    const listMatches = this.textMatches(list.name, filter);
+    const hasFilter = Boolean(filter.trim());
     const groups = this.countVisibleGroups(list.store.groups, filter);
     const todos = this.countVisibleTodos(list.store, filter);
-    const body = isExpanded
-      ? `${this.sortTodosByCreatedAt(list.store.todos).filter((todo) => this.todoMatches(todo, filter)).map((todo) => this.renderTodoRow(list.displayId, list.source, todo)).join("")}${list.store.groups.map((group) => this.renderGroup(list.displayId, list.source, group, filter)).filter(Boolean).join("")}${this.renderQuickAddRow(list.displayId, list.source)}`
+    const searchCollapsed = hasFilter && this.searchCollapsedListIds.has(list.id);
+    const showBody = forceExpanded || isExpanded || (hasFilter && !searchCollapsed && (listMatches || groups > 0 || todos > 0));
+    const body = showBody
+      ? `${this.sortTodosByCreatedAt(list.store.todos).filter((todo) => this.todoMatches(todo, filter)).map((todo) => this.renderTodoRow(list.displayId, list.source, todo, filter)).join("")}${list.store.groups.map((group) => this.renderGroup(list.displayId, list.source, group, filter)).filter(Boolean).join("")}${this.renderQuickAddRow(list.displayId, list.source)}`
       : "";
-    return `<article class="list-card ${list.source === "shared" ? "shared" : ""} ${isExpanded ? "expanded" : ""}"><div class="list-row drop-target" data-action="toggleListExpanded" data-list-id="${list.displayId}" data-source="${list.source}" data-drop-list-id="${list.displayId}"><span class="caret-list">${this.icon("chevron")}</span><div class="grow"><span class="label title" title="${this.escapeHtml(list.name)}">${this.escapeHtml(list.name)}</span>${list.sharedBadge ? `<button class="badge badge-icon action action-share" type="button" data-action="copyShareKey" data-list-id="${list.displayId}" data-source="${list.source}" title="Copy share key" aria-label="Copy share key">${this.icon("link")}</button>` : ""}</div><span class="list-stats" aria-label="${groups} folders and ${todos} tasks"><span class="stat-pill" title="${groups} folders">${this.icon("folder")}<span>${groups}</span></span><span class="stat-pill" title="${todos} tasks">${this.icon("task")}<span>${todos}</span></span></span><span class="actions">${list.source === "local" ? `<button class="action action-share" type="button" data-action="shareCurrentList" data-list-id="${list.displayId}" data-source="${list.source}" title="Share this list">${this.icon("link")}</button>` : `<button class="action action-share" type="button" data-action="copyShareKey" data-list-id="${list.displayId}" data-source="${list.source}" title="Copy share key">${this.icon("copy")}</button>`}<button class="action" type="button" data-action="addGroup" data-list-id="${list.displayId}" data-source="${list.source}" title="Add root folder">${this.icon("folderPlus")}</button><button class="action" type="button" data-action="renameList" data-list-id="${list.displayId}" data-source="${list.source}" title="Rename list">${this.icon("pencil")}</button><button class="action action-danger" type="button" data-action="deleteList" data-list-id="${list.displayId}" data-source="${list.source}" title="Delete list">${this.icon("trash")}</button></span></div>${isExpanded ? `<div class="content drop-target" data-drop-list-id="${list.displayId}" data-source="${list.source}">${body || '<div class="empty">No matching items.</div>'}</div>` : ""}</article>`;
+    const toggleAction = editorMode ? "toggleEditorListExpanded" : "toggleListExpanded";
+    return `<article class="list-card ${list.source === "shared" ? "shared" : ""} ${showBody ? "expanded" : ""}"><div class="list-row drop-target" data-action="${toggleAction}" data-list-id="${list.displayId}" data-source="${list.source}" data-drop-list-id="${list.displayId}"><span class="caret-list">${this.icon("chevron")}</span><div class="grow"><span class="label title" title="${this.escapeHtml(list.name)}">${this.highlightText(list.name, filter)}</span></div><span class="list-stats" aria-label="${groups} folders and ${todos} tasks"><span class="stat-pill" title="${groups} folders">${this.icon("folder")}<span>${groups}</span></span><span class="stat-pill" title="${todos} tasks">${this.icon("task")}<span>${todos}</span></span></span><span class="actions">${list.source === "local" ? `<button class="action action-share" type="button" data-action="shareCurrentList" data-list-id="${list.displayId}" data-source="${list.source}" title="Move to workspace">${this.icon("link")}</button>` : `<button class="action" type="button" data-action="syncSharedList" data-list-id="${list.displayId}" data-source="${list.source}" title="Refresh workspace list">${this.icon("refresh")}</button>`}<button class="action" type="button" data-action="addGroup" data-list-id="${list.displayId}" data-source="${list.source}" title="Add root folder">${this.icon("folderPlus")}</button><button class="action" type="button" data-action="renameList" data-list-id="${list.displayId}" data-source="${list.source}" title="Rename list">${this.icon("pencil")}</button><button class="action action-danger" type="button" data-action="deleteList" data-list-id="${list.displayId}" data-source="${list.source}" title="${list.source === "shared" ? "Delete list from workspace" : "Delete list"}">${this.icon("trash")}</button></span></div>${showBody ? `<div class="content drop-target" data-drop-list-id="${list.displayId}" data-source="${list.source}">${body || '<div class="empty">No matching items.</div>'}</div>` : ""}</article>`;
   }
 
   private renderGroup(listId: ListId, source: ListSource, group: TodoGroup, filter: string): string {
-    const groupMatches = !filter || group.name.toLowerCase().includes(filter.toLowerCase());
-    const todos = this.sortTodosByCreatedAt(group.todos).filter((todo) => this.todoMatches(todo, filter)).map((todo) => this.renderTodoRow(listId, source, todo)).join("");
+    const groupMatches = this.textMatches(group.name, filter);
+    const todos = this.sortTodosByCreatedAt(group.todos)
+      .filter((todo) => this.todoMatches(todo, filter))
+      .map((todo) => this.renderTodoRow(listId, source, todo, filter))
+      .join("");
     const groups = group.groups.map((item) => this.renderGroup(listId, source, item, filter)).filter(Boolean).join("");
     if (!groupMatches && !todos && !groups) {
       return "";
     }
-    return `<details class="group" open><summary class="group-summary drop-target" data-drop-list-id="${listId}" data-source="${source}" data-drop-group-id="${group.id}"><span class="details-caret">${this.icon("chevron")}</span><span class="grow label">${this.escapeHtml(group.name)}</span><span class="hover-tools"><button class="action" type="button" data-action="addTodo" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Quick add TODO">${this.icon("plus")}</button><button class="action" type="button" data-action="addGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Add subgroup">${this.icon("folderPlus")}</button><button class="action" type="button" data-action="renameGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Rename folder">${this.icon("pencil")}</button><button class="action drag" type="button" draggable="true" data-drag-type="group" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Drag group">${this.icon("drag")}</button><button class="action action-danger" type="button" data-action="deleteGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Delete group">${this.icon("trash")}</button></span></summary><div class="group-body drop-target" data-drop-list-id="${listId}" data-source="${source}" data-drop-group-id="${group.id}">${todos}${groups || (todos ? "" : '<div class="empty">No items yet.</div>')}${this.renderQuickAddRow(listId, source, group.id)}</div></details>`;
+    const isCollapsed = this.state.isGroupCollapsed(listId, group.id);
+    const openAttr = isCollapsed ? "" : " open";
+    return `<details class="group"${openAttr} data-list-id="${listId}" data-group-id="${group.id}" data-source="${source}"><summary class="group-summary drop-target" data-drop-list-id="${listId}" data-source="${source}" data-drop-group-id="${group.id}"><span class="details-caret">${this.icon("chevron")}</span><span class="grow label">${this.highlightText(group.name, filter)}</span><span class="hover-tools"><button class="action" type="button" data-action="addTodo" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Quick add TODO">${this.icon("plus")}</button><button class="action" type="button" data-action="addGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Add subgroup">${this.icon("folderPlus")}</button><button class="action" type="button" data-action="renameGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Rename folder">${this.icon("pencil")}</button><button class="action drag" type="button" draggable="true" data-drag-type="group" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Drag group">${this.icon("drag")}</button><button class="action action-danger" type="button" data-action="deleteGroup" data-list-id="${listId}" data-source="${source}" data-group-id="${group.id}" title="Delete group">${this.icon("trash")}</button></span></summary><div class="group-body drop-target" data-drop-list-id="${listId}" data-source="${source}" data-drop-group-id="${group.id}">${todos}${groups || (todos ? "" : '<div class="empty">No items yet.</div>')}${this.renderQuickAddRow(listId, source, group.id)}</div></details>`;
   }
 
-  private renderTodoRow(listId: ListId, source: ListSource, todo: TodoItem): string {
+  private renderTodoRow(listId: ListId, source: ListSource, todo: TodoItem, filter = ""): string {
     const dateStr = new Date(todo.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const hoverDate = formatDate(todo.createdAt);
-    return `<div class="todo-row"><button class="check ${todo.done ? "done" : ""}" type="button" data-action="toggleDone" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Toggle done"></button><div class="grow todo-main"><span class="label ${todo.done ? "done" : ""}" title="Created: ${dateStr}">${this.escapeHtml(todo.text)}</span><span class="todo-date" title="Created: ${dateStr}">${hoverDate}</span></div><span class="hover-tools"><button class="action" type="button" data-action="renameTodo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Rename task">${this.icon("pencil")}</button><button class="action drag" type="button" draggable="true" data-drag-type="todo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Drag TODO">${this.icon("drag")}</button><button class="action action-danger" type="button" data-action="deleteTodo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Delete TODO">${this.icon("trash")}</button></span></div>`;
+    const author = todo.author?.trim() || "Local";
+    const metaTitle = `Created: ${dateStr} | Author: ${author}`;
+    return `<div class="todo-row"><button class="check ${todo.done ? "done" : ""}" type="button" data-action="toggleDone" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Toggle done"></button><div class="grow todo-main"><span class="label ${todo.done ? "done" : ""}" title="${this.escapeHtml(metaTitle)}">${this.highlightText(todo.text, filter)}</span><span class="todo-date" title="${this.escapeHtml(metaTitle)}">${hoverDate}</span></div><span class="hover-tools"><button class="action" type="button" data-action="renameTodo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Rename task">${this.icon("pencil")}</button><button class="action drag" type="button" draggable="true" data-drag-type="todo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Drag TODO">${this.icon("drag")}</button><button class="action action-danger" type="button" data-action="deleteTodo" data-list-id="${listId}" data-source="${source}" data-todo-id="${todo.id}" title="Delete TODO">${this.icon("trash")}</button></span></div>`;
   }
 
   private renderQuickAddRow(listId: ListId, source: ListSource, groupId?: GroupId): string {
@@ -1666,6 +2222,7 @@ restoreQuickAddFocus();
           text: todo.text ?? "",
           done: Boolean(todo.done),
           createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+          author: typeof todo.author === "string" && todo.author.trim() ? todo.author.trim() : undefined,
           completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
         }))
       })),
@@ -1674,6 +2231,7 @@ restoreQuickAddFocus();
         text: todo.text ?? "",
         done: Boolean(todo.done),
         createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+        author: typeof todo.author === "string" && todo.author.trim() ? todo.author.trim() : undefined,
         completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
       }))
     };
@@ -1891,6 +2449,37 @@ restoreQuickAddFocus();
   private escapeHtml(text: string): string {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+
+  private textMatches(value: string, filter: string): boolean {
+    const lowered = filter.trim().toLowerCase();
+    if (!lowered) {
+      return true;
+    }
+    return value.toLowerCase().includes(lowered);
+  }
+
+  private highlightText(value: string, filter: string): string {
+    const lowered = filter.trim();
+    const escaped = this.escapeHtml(value);
+    if (!lowered) {
+      return escaped;
+    }
+
+    const safeFilter = lowered.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${safeFilter})`, "ig");
+    return escaped.replace(regex, `<span class="search-hit">$1</span>`);
+  }
+
+  private listMatchesFilter(list: FilterableList, filter: string): boolean {
+    if (!filter.trim()) {
+      return true;
+    }
+    return (
+      this.textMatches(list.name, filter) ||
+      this.countVisibleTodos(list.store, filter) > 0 ||
+      this.countVisibleGroups(list.store.groups, filter) > 0
+    );
+  }
 }
 
 function formatDate(timestamp: number): string {
@@ -1903,6 +2492,7 @@ function formatDate(timestamp: number): string {
 
 export function activate(context: vscode.ExtensionContext): void {
   storageManager.initialize(context);
+  githubService.initialize(context);
 
   const state = new TodoState(context);
   const controller = new TodoController(state, context.extensionUri);
@@ -1926,14 +2516,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("todoListPro.createList", async () => controller.addList()),
     vscode.commands.registerCommand("todoListPro.shareCurrentList", async () => controller.shareCurrentList()),
     vscode.commands.registerCommand("todoListPro.openListInEditor", async () => {
-      const list = await pickList();
-      if (list) {
-        await controller.openListInEditor(list.id, "local");
+      const choice = await controller.pickListForEditor();
+      if (choice) {
+        await controller.openListInEditor(choice.listId, choice.source);
       }
     }),
-    vscode.commands.registerCommand("todoListPro.addSharedList", async () => controller.addSharedList()),
-    vscode.commands.registerCommand("todoListPro.copyLocalListToShareMode", async () => controller.copyLocalListToShareMode()),
     vscode.commands.registerCommand("todoListPro.syncSharedList", async () => controller.syncSharedList()),
+    vscode.commands.registerCommand("todoListPro.inviteUserToWorkspace", async () => controller.inviteUserToWorkspace()),
+    vscode.commands.registerCommand("todoListPro.acceptRepositoryInvitation", async () => controller.acceptRepositoryInvitation()),
     vscode.commands.registerCommand("todoListPro.addGroup", async () => {
       const list = await pickList();
       if (list) {
@@ -1968,7 +2558,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.commands.registerCommand("todoListPro.clearFilter", async () => controller.clearFilter()),
-    vscode.commands.registerCommand("todoListPro.refresh", async () => controller.refresh())
+    vscode.commands.registerCommand("todoListPro.refresh", async () => controller.refresh(true))
   );
 }
 

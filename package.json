@@ -2,7 +2,7 @@
   "name": "projects-todo-advanced",
   "displayName": "Projects TODO Advanced",
   "description": "A structured TODO sidebar for VS Code with standalone lists, workspace visibility, drag and drop, and import/export.",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "publisher": "greenpedro",
   "icon": "media/store/icon.png",
   "repository": {
@@ -42,10 +42,10 @@
     "onCommand:todoListPro.configureStorageMode",
     "onCommand:todoListPro.shareCurrentList",
     "onCommand:todoListPro.openListInEditor",
-    "onCommand:todoListPro.addSharedList",
-    "onCommand:todoListPro.copyLocalListToShareMode",
     "onCommand:todoListPro.syncSharedList",
     "onCommand:todoListPro.toggleAutoRefreshSharedLists",
+    "onCommand:todoListPro.inviteUserToWorkspace",
+    "onCommand:todoListPro.acceptRepositoryInvitation",
     "onCommand:todoListPro.configureWorkspaceVisibility",
     "onCommand:todoListPro.configureCompletedRetention",
     "onCommand:todoListPro.setFilter",
@@ -107,27 +107,27 @@
       },
       {
         "command": "todoListPro.shareCurrentList",
-        "title": "Share List"
+        "title": "Move to Workspace"
       },
       {
         "command": "todoListPro.openListInEditor",
         "title": "Open List in Editor"
       },
       {
-        "command": "todoListPro.addSharedList",
-        "title": "Add Shared List"
-      },
-      {
-        "command": "todoListPro.copyLocalListToShareMode",
-        "title": "Copy Local List to Share Mode"
-      },
-      {
         "command": "todoListPro.syncSharedList",
-        "title": "Sync Shared List"
+        "title": "Refresh Workspace List"
       },
       {
         "command": "todoListPro.toggleAutoRefreshSharedLists",
-        "title": "Auto Refresh Shared Lists..."
+        "title": "Auto Refresh Workspaces..."
+      },
+      {
+        "command": "todoListPro.inviteUserToWorkspace",
+        "title": "Invite User to Workspace"
+      },
+      {
+        "command": "todoListPro.acceptRepositoryInvitation",
+        "title": "Accept Repository Invitation"
       },
       {
         "command": "todoListPro.importAll",
@@ -173,19 +173,24 @@
           "group": "sharing@10"
         },
         {
-          "command": "todoListPro.addSharedList",
+          "command": "todoListPro.inviteUserToWorkspace",
           "when": "view == todoListProView",
           "group": "sharing@20"
         },
         {
-          "command": "todoListPro.syncSharedList",
+          "command": "todoListPro.acceptRepositoryInvitation",
           "when": "view == todoListProView",
           "group": "sharing@30"
         },
         {
-          "command": "todoListPro.toggleAutoRefreshSharedLists",
+          "command": "todoListPro.syncSharedList",
           "when": "view == todoListProView",
           "group": "sharing@40"
+        },
+        {
+          "command": "todoListPro.toggleAutoRefreshSharedLists",
+          "when": "view == todoListProView",
+          "group": "sharing@50"
         },
         {
           "command": "todoListPro.exportSingleList",
@@ -226,6 +231,7 @@
           "type": "string",
           "enum": [
             "local",
+            "hybrid",
             "github"
           ],
           "default": "local",
@@ -240,7 +246,7 @@
         "todoListPro.autoRefreshSharedLists": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically refresh shared lists every 5 minutes when at least one shared list exists."
+          "description": "Automatically refresh workspace lists every 5 minutes when at least one workspace exists."
         }
       }
     }

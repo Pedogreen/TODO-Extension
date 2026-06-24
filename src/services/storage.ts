@@ -4,9 +4,11 @@ import { githubService, type GitHubRepoTarget } from "./github";
 
 const STORAGE_MODE_KEY = "todoListPro.storageMode";
 const SHARED_LISTS_KEY = "todoListPro.sharedLists";
-const CENTRAL_REPOSITORY_NAME = "TodoExtension";
-const CENTRAL_REPOSITORY_BRANCH = "main";
-const CENTRAL_LISTS_DIRECTORY = "lists";
+const PERSONAL_REPOSITORY_NAME = "todo-extension-personal";
+const WORKSPACE_REPOSITORY_PREFIX = "todo-workspace-";
+const MANAGED_REPOSITORY_DESCRIPTION_PREFIX = "Managed by TODO Extension";
+const MANAGED_REPOSITORY_MARKER_PATH = ".todo-extension/manifest.json";
+const REPOSITORY_LISTS_DIRECTORY = "lists";
 
 export interface StorageProvider {
   listLists(): Promise<TodoList[]>;
@@ -14,6 +16,21 @@ export interface StorageProvider {
   saveList(list: TodoList): Promise<void>;
   deleteList(listId: string): Promise<void>;
   sync(): Promise<void>;
+}
+
+export interface ManagedRepositoryRecord {
+  kind: "personal" | "workspace";
+  name: string;
+  description?: string;
+  collaborators?: string[];
+  target: GitHubRepoTarget;
+}
+
+export interface ManagedRepositoryManifest {
+  version: 1;
+  kind: "personal" | "workspace";
+  name: string;
+  createdAt: string;
 }
 
 export interface SharedListSnapshot extends TodoList {
@@ -51,7 +68,7 @@ interface SharedListsState {
   records: SharedListRecord[];
 }
 
-type StorageMode = "local" | "github";
+type StorageMode = "local" | "hybrid" | "github";
 
 export class LocalStorageProvider implements StorageProvider {
   private static readonly LISTS_KEY = "todoListPro.lists";
@@ -125,6 +142,7 @@ export class LocalStorageProvider implements StorageProvider {
       text: typeof todo.text === "string" ? todo.text : "",
       done: Boolean(todo.done),
       createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+      author: typeof todo.author === "string" && todo.author.trim() ? todo.author.trim() : undefined,
       completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
     }));
   }
@@ -132,7 +150,7 @@ export class LocalStorageProvider implements StorageProvider {
 
 export class GitHubRepoStorageProvider {
   public buildListPath(listId: string): string {
-    return `${CENTRAL_LISTS_DIRECTORY}/${listId}.json`;
+    return `${REPOSITORY_LISTS_DIRECTORY}/${listId}.json`;
   }
 
   public async loadFromShareKey(shareKey: string): Promise<{ target: GitHubRepoTarget; listId: string; listName: string }> {
@@ -196,7 +214,7 @@ export class GitHubRepoStorageProvider {
     target: GitHubRepoTarget,
     snapshot: SharedListSnapshot,
     sha?: string
-  ): Promise<{ sha: string }> {
+  ): Promise<{ sha: string; snapshot: SharedListSnapshot }> {
     let resolvedSha = sha;
     if (!resolvedSha) {
       try {
@@ -207,13 +225,29 @@ export class GitHubRepoStorageProvider {
       }
     }
 
-    const remote = await githubService.putRepoContents(
-      target,
-      JSON.stringify(snapshot, null, 2),
-      `Update ${snapshot.listName}`,
-      resolvedSha
-    );
-    return { sha: remote.sha };
+    try {
+      const remote = await githubService.putRepoContents(
+        target,
+        JSON.stringify(snapshot, null, 2),
+        `Update ${snapshot.listName}`,
+        resolvedSha
+      );
+      return { sha: remote.sha, snapshot };
+    } catch (error) {
+      if (!this.isConflictError(error)) {
+        throw error;
+      }
+
+      const current = await this.loadSnapshot(target);
+      const merged = this.mergeSnapshots(current.snapshot, snapshot);
+      const remote = await githubService.putRepoContents(
+        target,
+        JSON.stringify(merged, null, 2),
+        `Update ${merged.listName}`,
+        current.sha
+      );
+      return { sha: remote.sha, snapshot: merged };
+    }
   }
 
   public async deleteSnapshot(target: GitHubRepoTarget, sha: string): Promise<void> {
@@ -261,10 +295,85 @@ export class GitHubRepoStorageProvider {
     return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
   }
 
+  private isConflictError(error: unknown): boolean {
+    return error instanceof Error && /sha|conflict|precondition|changed/i.test(error.message);
+  }
+
+  private mergeSnapshots(remote: SharedListSnapshot, local: SharedListSnapshot): SharedListSnapshot {
+    return {
+      schemaVersion: 1,
+      updatedAt: local.updatedAt,
+      extensionName: local.extensionName || remote.extensionName || "Projects TODO Advanced",
+      listId: local.listId || remote.listId,
+      listName: local.listName || remote.listName,
+      createdAt: local.createdAt || remote.createdAt,
+      id: local.id || remote.id,
+      name: local.name || remote.name,
+      store: this.mergeStores(remote.store, local.store)
+    };
+  }
+
+  private mergeStores(remote: TodoStore, local: TodoStore): TodoStore {
+    return {
+      todos: this.mergeTodos(remote.todos, local.todos),
+      groups: this.mergeGroups(remote.groups, local.groups)
+    };
+  }
+
+  private mergeGroups(remoteGroups: TodoGroup[], localGroups: TodoGroup[]): TodoGroup[] {
+    const merged = new Map<string, TodoGroup>();
+    for (const group of remoteGroups) {
+      merged.set(group.id, this.cloneGroup(group));
+    }
+    for (const group of localGroups) {
+      const current = merged.get(group.id);
+      if (!current) {
+        merged.set(group.id, this.cloneGroup(group));
+        continue;
+      }
+      merged.set(group.id, this.mergeGroup(current, group));
+    }
+    return [...merged.values()];
+  }
+
+  private mergeGroup(remote: TodoGroup, local: TodoGroup): TodoGroup {
+    return {
+      id: local.id || remote.id,
+      name: local.name || remote.name,
+      groups: this.mergeGroups(remote.groups ?? [], local.groups ?? []),
+      todos: this.mergeTodos(remote.todos ?? [], local.todos ?? [])
+    };
+  }
+
+  private mergeTodos(remoteTodos: TodoItem[], localTodos: TodoItem[]): TodoItem[] {
+    const merged = new Map<string, TodoItem>();
+    for (const todo of remoteTodos) {
+      merged.set(todo.id, { ...todo });
+    }
+    for (const todo of localTodos) {
+      const current = merged.get(todo.id);
+      if (!current) {
+        merged.set(todo.id, { ...todo });
+        continue;
+      }
+      merged.set(todo.id, { ...current, ...todo });
+    }
+    return [...merged.values()];
+  }
+
+  private cloneGroup(group: TodoGroup): TodoGroup {
+    return {
+      id: group.id,
+      name: group.name,
+      groups: group.groups ? this.mergeGroups([], group.groups) : [],
+      todos: group.todos ? this.mergeTodos([], group.todos) : []
+    };
+  }
+
   private parseSnapshot(raw: string, target: GitHubRepoTarget): SharedListSnapshot {
     const parsed = JSON.parse(raw) as Partial<SharedListSnapshot>;
     if (parsed.schemaVersion !== 1) {
-      throw new Error("Unsupported shared list schema version.");
+      throw new Error("Unsupported workspace list schema version.");
     }
     if (parsed.listId !== parsed.id || parsed.listName !== parsed.name) {
       // tolerate older/wider payloads by normalizing below
@@ -304,6 +413,7 @@ export class GitHubRepoStorageProvider {
       text: typeof todo.text === "string" ? todo.text : "",
       done: Boolean(todo.done),
       createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+      author: typeof todo.author === "string" && todo.author.trim() ? todo.author.trim() : undefined,
       completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
     }));
   }
@@ -315,6 +425,7 @@ export class StorageManager {
   private currentMode: StorageMode = "local";
   private localProvider: LocalStorageProvider | null = null;
   private sharedProvider = new GitHubRepoStorageProvider();
+  private personalRepository?: ManagedRepositoryRecord;
 
   private readonly sharedListsKey = SHARED_LISTS_KEY;
 
@@ -347,8 +458,25 @@ export class StorageManager {
   }
 
   public async switchToShare(): Promise<void> {
-    await this.ensureCentralRepository();
+    await this.switchToGitHubFull();
+  }
+
+  public async switchToHybrid(): Promise<void> {
+    await this.setStorageMode("hybrid");
+  }
+
+  public async switchToGitHubFull(): Promise<vscode.Uri> {
+    const localLists = await this.listLocalLists();
+    const backup = await this.createLocalBackup(localLists);
+    const personal = await this.ensurePersonalRepository();
+    for (const list of localLists) {
+      await this.saveRepositoryList(personal, list);
+    }
+    for (const list of localLists) {
+      await this.localProvider?.deleteList(list.id);
+    }
     await this.setStorageMode("github");
+    return backup;
   }
 
   public async listLocalLists(): Promise<TodoList[]> {
@@ -358,13 +486,242 @@ export class StorageManager {
     return this.localProvider.listLists();
   }
 
+  public async createLocalBackup(lists: TodoList[]): Promise<vscode.Uri> {
+    if (!this.context) {
+      throw new Error("Storage manager is not initialized.");
+    }
+
+    const backupsDir = vscode.Uri.joinPath(this.context.globalStorageUri, "backups");
+    await vscode.workspace.fs.createDirectory(backupsDir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupUri = vscode.Uri.joinPath(backupsDir, `todo-backup-${stamp}.json`);
+    const payload = {
+      schemaVersion: 1,
+      createdAt: new Date().toISOString(),
+      storageMode: this.currentMode,
+      lists
+    };
+    await vscode.workspace.fs.writeFile(backupUri, Buffer.from(JSON.stringify(payload, null, 2), "utf8"));
+    return backupUri;
+  }
+
+  public async ensurePersonalRepository(): Promise<ManagedRepositoryRecord> {
+    if (this.personalRepository) {
+      return this.personalRepository;
+    }
+
+    const repo = await githubService.ensureUserRepository(PERSONAL_REPOSITORY_NAME, {
+      private: true,
+      description: `${MANAGED_REPOSITORY_DESCRIPTION_PREFIX} personal repository`
+    });
+    const target: GitHubRepoTarget = {
+      owner: repo.owner,
+      repo: repo.repo.name,
+      branch: repo.repo.default_branch || "main",
+      path: ""
+    };
+    await this.writeManagedRepositoryMarker(target, {
+      version: 1,
+      kind: "personal",
+      name: PERSONAL_REPOSITORY_NAME,
+      createdAt: new Date().toISOString()
+    });
+    this.personalRepository = {
+      kind: "personal",
+      name: PERSONAL_REPOSITORY_NAME,
+      description: `${MANAGED_REPOSITORY_DESCRIPTION_PREFIX} personal repository`,
+      collaborators: [],
+      target
+    };
+    return this.personalRepository;
+  }
+
+  public async ensureWorkspaceRepository(workspaceName: string): Promise<ManagedRepositoryRecord> {
+    const slug = this.slugify(workspaceName);
+    const repoName = `${WORKSPACE_REPOSITORY_PREFIX}${slug}`;
+    const repo = await githubService.ensureUserRepository(repoName, {
+      private: true,
+      description: `${MANAGED_REPOSITORY_DESCRIPTION_PREFIX} workspace ${workspaceName}`
+    });
+    const target: GitHubRepoTarget = {
+      owner: repo.owner,
+      repo: repo.repo.name,
+      branch: repo.repo.default_branch || "main",
+      path: ""
+    };
+    await this.writeManagedRepositoryMarker(target, {
+      version: 1,
+      kind: "workspace",
+      name: workspaceName,
+      createdAt: new Date().toISOString()
+    });
+    return {
+      kind: "workspace",
+      name: workspaceName,
+      description: `${MANAGED_REPOSITORY_DESCRIPTION_PREFIX} workspace ${workspaceName}`,
+      collaborators: [],
+      target
+    };
+  }
+
+  public async listPersonalLists(): Promise<SharedListRecord[]> {
+    return this.listRepositoryLists(await this.ensurePersonalRepository());
+  }
+
+  public async savePersonalList(list: TodoList): Promise<SharedListRecord> {
+    return this.saveRepositoryList(await this.ensurePersonalRepository(), list);
+  }
+
+  public async deletePersonalList(listId: string): Promise<void> {
+    await this.deleteRepositoryList(await this.ensurePersonalRepository(), listId);
+  }
+
+  public async deletePersonalListIfExists(listId: string): Promise<void> {
+    const personal = await this.findPersonalRepository();
+    if (!personal) {
+      return;
+    }
+    await this.deleteRepositoryList(personal, listId);
+  }
+
+  public async discoverManagedRepositories(): Promise<ManagedRepositoryRecord[]> {
+    const repos = await githubService.listCurrentUserRepositories();
+    const managed: ManagedRepositoryRecord[] = [];
+    for (const repo of repos) {
+      const isManaged =
+        repo.name === PERSONAL_REPOSITORY_NAME ||
+        repo.name.startsWith(WORKSPACE_REPOSITORY_PREFIX) ||
+        Boolean(repo.topics.includes("todo-extension")) ||
+        Boolean(repo.description?.includes(MANAGED_REPOSITORY_DESCRIPTION_PREFIX));
+      if (!isManaged) {
+        continue;
+      }
+
+      const target: GitHubRepoTarget = {
+        owner: repo.owner,
+        repo: repo.name,
+        branch: repo.default_branch || "main",
+        path: ""
+      };
+      const manifest = await this.readManagedRepositoryMarker(target).catch(() => undefined);
+      const collaborators = await this.listRepositoryCollaborators(target).catch(() => []);
+      managed.push({
+        kind: manifest?.kind ?? (repo.name === PERSONAL_REPOSITORY_NAME ? "personal" : "workspace"),
+        name: manifest?.name ?? repo.name,
+        description: repo.description ?? undefined,
+        collaborators,
+        target
+      });
+    }
+    return managed;
+  }
+
+  public async listWorkspaceRepositories(): Promise<ManagedRepositoryRecord[]> {
+    return (await this.discoverManagedRepositories()).filter((repo) => repo.kind === "workspace");
+  }
+
+  public async findPersonalRepository(): Promise<ManagedRepositoryRecord | undefined> {
+    if (this.personalRepository) {
+      return this.personalRepository;
+    }
+
+    const repositories = await this.discoverManagedRepositories();
+    const personal = repositories.find((repo) => repo.kind === "personal");
+    if (!personal) {
+      return undefined;
+    }
+
+    this.personalRepository = personal;
+    return personal;
+  }
+
+  public async listWorkspaceLists(): Promise<SharedListRecord[]> {
+    const repos = await this.listWorkspaceRepositories();
+    const lists: SharedListRecord[] = [];
+    for (const repo of repos) {
+      lists.push(...(await this.listRepositoryLists(repo)));
+    }
+    return lists;
+  }
+
+  public async listRepositoryLists(repository: ManagedRepositoryRecord): Promise<SharedListRecord[]> {
+    const files = await githubService.listRepositoryFiles(repository.target, REPOSITORY_LISTS_DIRECTORY);
+    const jsonFiles = files.filter((file) => file.type === "file" && file.name.toLowerCase().endsWith(".json"));
+    const records: SharedListRecord[] = [];
+    for (const file of jsonFiles) {
+      const target = { ...repository.target, path: file.path };
+      const { snapshot, sha } = await this.sharedProvider.loadSnapshot(target);
+      records.push({
+        id: this.buildSharedRecordId(target),
+        listId: snapshot.listId,
+        listName: snapshot.listName,
+        provider: "github-repo",
+        target,
+        sha,
+        lastSyncedAt: Date.now(),
+        snapshot: this.sharedProvider.listFromSnapshot(snapshot)
+      });
+    }
+    return records;
+  }
+
+  public async saveRepositoryList(repository: ManagedRepositoryRecord, list: TodoList): Promise<SharedListRecord> {
+    return this.saveRepositorySnapshot(repository, list);
+  }
+
+  public async saveRepositorySnapshot(
+    repository: ManagedRepositoryRecord,
+    list: TodoList,
+    sha?: string
+  ): Promise<SharedListRecord> {
+    const target = { ...repository.target, path: `${REPOSITORY_LISTS_DIRECTORY}/${list.id}.json` };
+    const snapshot = this.sharedProvider.snapshotFromList(list);
+    const saved = await this.sharedProvider.saveSnapshot(target, snapshot, sha);
+    return {
+      id: this.buildSharedRecordId(target),
+      listId: saved.snapshot.listId,
+      listName: saved.snapshot.listName,
+      provider: "github-repo",
+      target,
+      sha: saved.sha,
+      lastSyncedAt: Date.now(),
+      snapshot: this.sharedProvider.listFromSnapshot(saved.snapshot)
+    };
+  }
+
+  public async deleteRepositoryList(repository: ManagedRepositoryRecord, listId: string): Promise<void> {
+    const target = { ...repository.target, path: `${REPOSITORY_LISTS_DIRECTORY}/${listId}.json` };
+    const content = await githubService.getRepoContents(target);
+    await githubService.deleteRepoContents(target, `Delete ${listId}`, content.sha);
+  }
+
+  public async inviteCollaborator(repository: ManagedRepositoryRecord, username: string): Promise<void> {
+    await githubService.inviteCollaborator(repository.target.owner, repository.target.repo, username, "push");
+  }
+
+  public async listPendingInvitations(repository: ManagedRepositoryRecord): Promise<import("./github").GitHubRepositoryInvitation[]> {
+    return githubService.listRepositoryInvitations(repository.target.owner, repository.target.repo);
+  }
+
+  public async listCurrentUserInvitations(): Promise<import("./github").GitHubRepositoryInvitation[]> {
+    return githubService.listCurrentUserRepositoryInvitations();
+  }
+
+  public async acceptInvitation(invitationId: number): Promise<void> {
+    await githubService.acceptRepositoryInvitation(invitationId);
+  }
+
+  public async declineInvitation(invitationId: number): Promise<void> {
+    await githubService.declineRepositoryInvitation(invitationId);
+  }
+
   public async shareLocalList(list: TodoList, target?: GitHubRepoTarget): Promise<SharedListRecord> {
     const resolvedTarget = target ?? (await this.buildCentralTargetForList(list.id));
     const snapshot = this.sharedProvider.snapshotFromList(list);
     const sha = await this.sharedProvider.saveSnapshot(resolvedTarget, snapshot);
     const existing = this.readSharedRecords().find((record) => record.listId === list.id);
     const record: SharedListRecord = {
-      id: existing?.id ?? this.newId("shared"),
+      id: existing?.id ?? this.buildSharedRecordId(resolvedTarget),
       listId: list.id,
       listName: list.name,
       provider: "github-repo",
@@ -386,7 +743,7 @@ export class StorageManager {
     const target = this.sharedProvider.buildTarget(owner, repo, decoded.branch, decoded.path);
     const { snapshot, sha } = await this.sharedProvider.loadSnapshot(target);
     const record: SharedListRecord = {
-      id: this.newId("shared"),
+      id: this.buildSharedRecordId(target),
       listId: snapshot.listId,
       listName: snapshot.listName,
       provider: "github-repo",
@@ -402,7 +759,7 @@ export class StorageManager {
   public async syncSharedList(recordId: string): Promise<SharedListRecord> {
     const record = await this.getSharedRecord(recordId);
     if (!record) {
-      throw new Error("Shared list not found.");
+      throw new Error("Workspace list not found.");
     }
     const { snapshot, sha } = await this.sharedProvider.loadSnapshot(record.target);
     const next: SharedListRecord = {
@@ -420,7 +777,7 @@ export class StorageManager {
   public async saveSharedList(recordId: string, updater: (list: TodoList) => void): Promise<SharedListRecord> {
     const record = await this.getSharedRecord(recordId);
     if (!record) {
-      throw new Error("Shared list not found.");
+      throw new Error("Workspace list not found.");
     }
 
     const nextList: TodoList = {
@@ -434,11 +791,11 @@ export class StorageManager {
       const saved = await this.sharedProvider.saveSnapshot(record.target, snapshot, record.sha);
       const next: SharedListRecord = {
         ...record,
-        listId: nextList.id,
-        listName: nextList.name,
+        listId: saved.snapshot.listId,
+        listName: saved.snapshot.listName,
         sha: saved.sha,
         lastSyncedAt: Date.now(),
-        snapshot: nextList
+        snapshot: this.sharedProvider.listFromSnapshot(saved.snapshot)
       };
       await this.upsertSharedRecord(next);
       return next;
@@ -461,12 +818,21 @@ export class StorageManager {
     if (!record) {
       return;
     }
-    let sha = record.sha;
-    if (!sha) {
+    let currentSha = record.sha;
+    if (!currentSha) {
       const current = await this.sharedProvider.loadSnapshot(record.target);
-      sha = current.sha;
+      currentSha = current.sha;
     }
-    await this.sharedProvider.deleteSnapshot(record.target, sha);
+    try {
+      await this.sharedProvider.deleteSnapshot(record.target, currentSha);
+    } catch (error) {
+      if (!(error instanceof Error) || !/sha|conflict|precondition|changed/i.test(error.message)) {
+        throw error;
+      }
+
+      const refreshed = await this.sharedProvider.loadSnapshot(record.target);
+      await this.sharedProvider.deleteSnapshot(record.target, refreshed.sha);
+    }
     await this.removeSharedRecord(recordId);
   }
 
@@ -511,18 +877,17 @@ export class StorageManager {
   }
 
   public async ensureCentralRepository(): Promise<{ owner: string; repo: string; branch: string }> {
-    const { owner } = await githubService.ensureUserRepository(CENTRAL_REPOSITORY_NAME, {
-      private: true,
-      description: "Shared TODO lists for Projects TODO Advanced"
-    });
-    return { owner, repo: CENTRAL_REPOSITORY_NAME, branch: CENTRAL_REPOSITORY_BRANCH };
+    const personal = await this.ensurePersonalRepository();
+    return { owner: personal.target.owner, repo: personal.target.repo, branch: personal.target.branch };
   }
 
   public async buildCentralTargetForList(listId: string): Promise<GitHubRepoTarget> {
-    const base = await this.ensureCentralRepository();
+    const base = await this.ensurePersonalRepository();
     return {
-      ...base,
-      path: this.sharedProvider.buildListPath(listId)
+      owner: base.target.owner,
+      repo: base.target.repo,
+      branch: base.target.branch,
+      path: `${REPOSITORY_LISTS_DIRECTORY}/${listId}.json`
     };
   }
 
@@ -549,17 +914,18 @@ export class StorageManager {
   }
 
   private normalizeSharedRecord(record: SharedListRecord): SharedListRecord {
+    const target = {
+      owner: record.target.owner,
+      repo: record.target.repo,
+      branch: record.target.branch,
+      path: record.target.path
+    };
     return {
-      id: typeof record.id === "string" && record.id ? record.id : this.newId("shared"),
+      id: typeof record.id === "string" && record.id ? record.id : this.buildSharedRecordId(target),
       listId: typeof record.listId === "string" && record.listId ? record.listId : this.newId("list"),
       listName: typeof record.listName === "string" && record.listName ? record.listName : "Shared List",
       provider: "github-repo",
-      target: {
-        owner: record.target.owner,
-        repo: record.target.repo,
-        branch: record.target.branch,
-        path: record.target.path
-      },
+      target,
       sha: typeof record.sha === "string" && record.sha ? record.sha : undefined,
       lastSyncedAt: typeof record.lastSyncedAt === "number" ? record.lastSyncedAt : undefined,
       snapshot: this.normalizeList(record.snapshot)
@@ -597,6 +963,7 @@ export class StorageManager {
       text: typeof todo.text === "string" ? todo.text : "",
       done: Boolean(todo.done),
       createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+      author: typeof todo.author === "string" && todo.author.trim() ? todo.author.trim() : undefined,
       completedAt: typeof todo.completedAt === "number" ? todo.completedAt : undefined
     }));
   }
@@ -609,7 +976,56 @@ export class StorageManager {
     if (error instanceof Error && /sha|conflict|precondition|changed/i.test(error.message)) {
       return new Error("Remote list was changed by someone else. Please refresh before saving.");
     }
-    return error instanceof Error ? error : new Error("Failed to save shared list.");
+    return error instanceof Error ? error : new Error("Failed to save workspace list.");
+  }
+
+  private async writeManagedRepositoryMarker(target: GitHubRepoTarget, manifest: ManagedRepositoryManifest): Promise<void> {
+    await githubService.putRepoContents(
+      { ...target, path: MANAGED_REPOSITORY_MARKER_PATH },
+      JSON.stringify(manifest, null, 2),
+      `Update repository marker for ${manifest.name}`
+    );
+    await githubService.setRepositoryTopicAndDescription(target.owner, target.repo, {
+      description: `${MANAGED_REPOSITORY_DESCRIPTION_PREFIX} ${manifest.kind} ${manifest.name}`,
+      topics: ["todo-extension"]
+    });
+  }
+
+  private async listRepositoryCollaborators(target: GitHubRepoTarget): Promise<string[]> {
+    const collaborators = await githubService.listRepositoryCollaborators(target.owner, target.repo);
+    return collaborators.map((item) => item.login).filter((login) => typeof login === "string" && login.length > 0);
+  }
+
+  private async readManagedRepositoryMarker(target: GitHubRepoTarget): Promise<ManagedRepositoryManifest | undefined> {
+    try {
+      const content = await githubService.getRepoContents({ ...target, path: MANAGED_REPOSITORY_MARKER_PATH });
+      const parsed = JSON.parse(content.content) as Partial<ManagedRepositoryManifest>;
+      if (parsed.version !== 1 || (parsed.kind !== "personal" && parsed.kind !== "workspace")) {
+        return undefined;
+      }
+      return {
+        version: 1,
+        kind: parsed.kind,
+        name: typeof parsed.name === "string" ? parsed.name : target.repo,
+        createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : new Date().toISOString()
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private slugify(value: string): string {
+    return value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/-{2,}/g, "-")
+      .slice(0, 48) || "workspace";
+  }
+
+  private buildSharedRecordId(target: GitHubRepoTarget): string {
+    return `shared:${Buffer.from(`${target.owner}/${target.repo}/${target.branch}/${target.path}`, "utf8").toString("base64url")}`;
   }
 
   private newId(prefix: string): string {
